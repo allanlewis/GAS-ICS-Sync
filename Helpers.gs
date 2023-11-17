@@ -788,6 +788,13 @@ function processEventInstance(recEvent) {
  * If onlyFutureEvents is set to true, events that have taken place since the last sync are also removed.
  */
 function processEventCleanup() {
+  const toDelete = calendarEvents.filter(
+    (event, i) => icsEventsIds.indexOf(calendarEventsIds[i]) === -1,
+  );
+  if (toDelete.length >= 100) {
+    Logger.log(`Refusing to delete ${toDelete.length} events!`);
+    return;
+  }
   for (var i = 0; i < calendarEvents.length; i++) {
     var currentID = calendarEventsIds[i];
     var feedIndex = icsEventsIds.indexOf(currentID);
