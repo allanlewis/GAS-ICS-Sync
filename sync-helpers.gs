@@ -3,7 +3,7 @@
  * acceptable value to use Google "everyMinutes" trigger setting (i.e. one of
  * the following values: 1, 5, 10, 15, 30).
  *
- * @param {?integer} The manually set frequency that the user intends to set.
+ * @param {?integer} requestedFrequency The manually set frequency that the user intends to set.
  * @return {integer} The closest valid value to the intended frequency setting. Defaulting to 15 if no valid input is provided.
  */
 function getValidTriggerFrequency(requestedFrequency) {
@@ -79,7 +79,7 @@ function fetchSourceCalendars(sourceCalendarURLs) {
     var url = source[0].replace("webcal://", "https://");
     var colorId = source[1];
 
-    callWithBackoff(function () {
+    runWithBackoff(function () {
       var urlResponse = UrlFetchApp.fetch(url, {
         validateHttpsCertificates: false,
         muteHttpExceptions: true,
@@ -96,7 +96,7 @@ function fetchSourceCalendars(sourceCalendarURLs) {
           return;
         }
       } else {
-        //Throw here to make callWithBackoff run again
+        // Throw here to make runWithBackoff retry the request.
         throw (
           "Error: Encountered HTTP error " +
           urlResponse.getResponseCode() +
@@ -119,7 +119,7 @@ function fetchSourceCalendars(sourceCalendarURLs) {
  * @param {string} targetCalendarName - The name of the calendar to return
  * @return {Calendar} The calendar retrieved or created
  */
-function setupTargetCalendar(targetCalendarName) {
+function getOrCreateTargetCalendar(targetCalendarName) {
   var targetCalendar = Calendar.CalendarList.list({
     showHidden: true,
     maxResults: 250,
@@ -150,7 +150,7 @@ function setupTargetCalendar(targetCalendarName) {
  * @param {Array.string} responses - Array with all ical sources
  * @return {Array.ICALComponent} Array with all events found
  */
-function parseResponses(responses, calendarContext, sessionContext) {
+function parseSourceEvents(responses, calendarContext, sessionContext) {
   var result = [];
   for (var responseItem of responses) {
     var calendarData = responseItem[0];
@@ -252,14 +252,16 @@ function parseResponses(responses, calendarContext, sessionContext) {
 }
 
 /**
- * Creates a Google Calendar event and inserts it to the target calendar.
+ * Syncs a single source event into the target calendar.
+ * Creates new events, updates existing managed events, and defers recurrence
+ * exceptions until the recurring parent has been processed.
  *
  * @param {ICAL.Component} event - The event to process
  * @param {string} calendarTz - The timezone of the target calendar
  */
-function processEvent(event, calendarTz, calendarContext, sessionContext) {
+function syncEvent(event, calendarTz, calendarContext, sessionContext) {
   //------------------------ Create the event object ------------------------
-  var newEvent = createEvent(
+  var newEvent = buildCalendarEvent(
     event,
     calendarTz,
     calendarContext,
@@ -287,7 +289,7 @@ function processEvent(event, calendarTz, calendarContext, sessionContext) {
           "Updating existing event " +
             newEvent.extendedProperties.private["id"],
         );
-        newEvent = callWithBackoff(function () {
+        newEvent = runWithBackoff(function () {
           return Calendar.Events.update(
             newEvent,
             calendarContext.targetCalendarId,
@@ -307,7 +309,7 @@ function processEvent(event, calendarTz, calendarContext, sessionContext) {
         Logger.log(
           "Adding new event " + newEvent.extendedProperties.private["id"],
         );
-        newEvent = callWithBackoff(function () {
+        newEvent = runWithBackoff(function () {
           return Calendar.Events.insert(
             newEvent,
             calendarContext.targetCalendarId,
@@ -336,12 +338,17 @@ function processEvent(event, calendarTz, calendarContext, sessionContext) {
  * @param {string} calendarTz - The timezone of the target calendar
  * @return {?Calendar.Event} The Calendar.Event that will be added to the target calendar
  */
-function createEvent(event, calendarTz, calendarContext, sessionContext) {
+function buildCalendarEvent(
+  event,
+  calendarTz,
+  calendarContext,
+  sessionContext,
+) {
   event.removeProperty("dtstamp");
   var icalEvent = new ICAL.Event(event, { strictExceptions: true });
   if (
     CONFIG.onlyFutureEvents &&
-    checkSkipEvent(event, icalEvent, calendarContext, sessionContext)
+    shouldSkipEvent(event, icalEvent, calendarContext, sessionContext)
   ) {
     return;
   }
@@ -355,7 +362,7 @@ function createEvent(event, calendarTz, calendarContext, sessionContext) {
     return;
   }
 
-  var newEvent = callWithBackoff(function () {
+  var newEvent = runWithBackoff(function () {
     return Calendar.newEvent();
   }, RUNTIME_SETTINGS.defaultMaxRetries);
   if (icalEvent.startDate.isDate) {
@@ -430,7 +437,7 @@ function createEvent(event, calendarTz, calendarContext, sessionContext) {
     event.hasProperty("url") &&
     event.getFirstPropertyValue("url").toString().substring(0, 4) == "http"
   ) {
-    newEvent.source = callWithBackoff(function () {
+    newEvent.source = runWithBackoff(function () {
       return Calendar.newEventSource();
     }, RUNTIME_SETTINGS.defaultMaxRetries);
     newEvent.source.url = event.getFirstPropertyValue("url").toString();
@@ -586,7 +593,7 @@ function createEvent(event, calendarTz, calendarContext, sessionContext) {
  * @param {ICAL.Event} icalEvent - The event to process as ICAL.Event object
  * @return {boolean} Wether it's a past event or not
  */
-function checkSkipEvent(event, icalEvent, calendarContext, sessionContext) {
+function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
   if (icalEvent.isRecurrenceException()) {
     if (
       icalEvent.startDate.compare(sessionContext.startUpdateTime) < 0 &&
@@ -741,12 +748,12 @@ function checkSkipEvent(event, icalEvent, calendarContext, sessionContext) {
 }
 
 /**
- * Patches an existing event instance with the provided Calendar.Event.
- * The instance that needs to be updated is identified by the recurrence-id of the provided event.
+ * Updates a recurring event instance when a managed match exists, or inserts it
+ * as a standalone event when no managed instance is found.
  *
  * @param {Calendar.Event} recEvent - The event instance to process
  */
-function processEventInstance(recEvent, calendarContext) {
+function upsertRecurringEventInstance(recEvent, calendarContext) {
   Logger.log(
     "ID: " +
       recEvent.extendedProperties.private["id"] +
@@ -754,7 +761,7 @@ function processEventInstance(recEvent, calendarContext) {
       recEvent.recurringEventId,
   );
 
-  var eventInstanceToPatch = findManagedRecurringEventInstance(
+  var eventInstanceToPatch = findRecurringEventInstance(
     calendarContext.targetCalendarId,
     recEvent,
   );
@@ -765,7 +772,7 @@ function processEventInstance(recEvent, calendarContext) {
     } else if (recEvent.recurringEventId.substr(-1) !== "Z") {
       recEvent.recurringEventId += "Z";
     }
-    eventInstanceToPatch = findManagedRecurringEventInstance(
+    eventInstanceToPatch = findRecurringEventInstance(
       calendarContext.targetCalendarId,
       recEvent,
     );
@@ -773,7 +780,7 @@ function processEventInstance(recEvent, calendarContext) {
 
   if (eventInstanceToPatch !== null && eventInstanceToPatch.length == 1) {
     Logger.log("Updating existing event instance");
-    callWithBackoff(function () {
+    runWithBackoff(function () {
       Calendar.Events.update(
         recEvent,
         calendarContext.targetCalendarId,
@@ -782,14 +789,14 @@ function processEventInstance(recEvent, calendarContext) {
     }, RUNTIME_SETTINGS.defaultMaxRetries);
   } else {
     Logger.log("No Instance matched, adding as new event!");
-    callWithBackoff(function () {
+    runWithBackoff(function () {
       Calendar.Events.insert(recEvent, calendarContext.targetCalendarId);
     }, RUNTIME_SETTINGS.defaultMaxRetries);
   }
 }
 
-function findManagedRecurringEventInstance(targetCalendarId, recEvent) {
-  var matchingItems = callWithBackoff(function () {
+function findRecurringEventInstance(targetCalendarId, recEvent) {
+  var matchingItems = runWithBackoff(function () {
     return Calendar.Events.list(targetCalendarId, {
       singleEvents: true,
       privateExtendedProperty:
@@ -806,7 +813,7 @@ function findManagedRecurringEventInstance(targetCalendarId, recEvent) {
   }
 
   return filterManagedEvents(
-    callWithBackoff(function () {
+    runWithBackoff(function () {
       return Calendar.Events.list(targetCalendarId, {
         singleEvents: true,
         orderBy: "startTime",
@@ -833,7 +840,7 @@ function filterManagedEvents(events) {
  * Deletes all events from the target calendar that no longer exist in the source calendars.
  * If onlyFutureEvents is set to true, events that have taken place since the last sync are also removed.
  */
-function processEventCleanup(calendarContext, sessionContext) {
+function removeMissingEvents(calendarContext, sessionContext) {
   const toDelete = calendarContext.managedEvents.events.filter(
     function (event) {
       var managedId =
@@ -860,7 +867,7 @@ function processEventCleanup(calendarContext, sessionContext) {
       currentEvent.extendedProperties.private["id"];
 
     Logger.log("Deleting old event " + currentID);
-    callWithBackoff(function () {
+    runWithBackoff(function () {
       Calendar.Events.remove(calendarContext.targetCalendarId, currentEvent.id);
     }, RUNTIME_SETTINGS.defaultMaxRetries);
 
@@ -1033,9 +1040,9 @@ function parseNotificationTime(notificationString) {
 }
 
 /**
- * Sends an email summary with added/modified/deleted events.
+ * Sends an execution summary email covering added, modified, and removed events.
  */
-function sendSummary(sessionContext) {
+function sendExecutionSummary(sessionContext) {
   var body;
   var addedEvents = sessionContext.notifications.addedEvents.slice();
   var modifiedEvents = sessionContext.notifications.modifiedEvents.slice();
@@ -1098,18 +1105,18 @@ function sendSummary(sessionContext) {
 
 /**
  * Runs the specified function with exponential backoff and returns the result.
- * Will return null if the function did not succeed afterall.
+ * Returns `null` for exhausted recoverable failures or HTTP fetch failures.
  *
  * @param {function} func - The function that should be executed
  * @param {Number} maxRetries - How many times the function should try if it fails
- * @return {?Calendar.Event} The Calendar.Event that was added in the calendar, null if func did not complete successfully
+ * @return {*} The wrapped function result, or null if retries are exhausted
  */
 var backoffRecoverableErrors = [
   "service invoked too many times in a short time",
   "rate limit exceeded",
   "internal error",
 ];
-function callWithBackoff(func, maxRetries) {
+function runWithBackoff(func, maxRetries) {
   var tries = 0;
   var result;
   while (tries <= maxRetries) {

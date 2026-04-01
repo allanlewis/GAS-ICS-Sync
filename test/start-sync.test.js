@@ -31,11 +31,11 @@ test("startSync orchestrates one calendar sync and releases the lock", () => {
   context.fetchSourceCalendars = () => [
     ["BEGIN:VCALENDAR\r\nEND:VCALENDAR", "5"],
   ];
-  context.setupTargetCalendar = () => ({ id: "calendar-1" });
+  context.getOrCreateTargetCalendar = () => ({ id: "calendar-1" });
   context.Calendar.Events.list = () => ({ items: [] });
   context.Calendar.Settings.get = () => ({ value: "UTC" });
-  context.parseResponses = () => ["event-1", "event-2"];
-  context.processEvent = (
+  context.parseSourceEvents = () => ["event-1", "event-2"];
+  context.syncEvent = (
     event,
     calendarTz,
     calendarContext,
@@ -51,7 +51,7 @@ test("startSync orchestrates one calendar sync and releases the lock", () => {
       },
     );
   };
-  context.sendSummary = () => {
+  context.sendExecutionSummary = () => {
     summarySent += 1;
   };
 

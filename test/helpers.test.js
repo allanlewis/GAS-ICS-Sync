@@ -40,11 +40,11 @@ test("parseNotificationTime converts duration strings into minutes", () => {
   assert.equal(context.parseNotificationTime("P1DT3H"), 1620);
 });
 
-test("callWithBackoff retries recoverable failures and returns the eventual result", () => {
+test("runWithBackoff retries recoverable failures and returns the eventual result", () => {
   const context = loadProject();
   let attempts = 0;
 
-  const result = context.callWithBackoff(() => {
+  const result = context.runWithBackoff(() => {
     attempts += 1;
     if (attempts < 3) {
       throw new Error("Rate limit exceeded");
@@ -57,7 +57,7 @@ test("callWithBackoff retries recoverable failures and returns the eventual resu
   assert.equal(attempts, 3);
 });
 
-test("callWithBackoff applies retry jitter to the sleep duration", () => {
+test("runWithBackoff applies retry jitter to the sleep duration", () => {
   const context = loadProject();
   let sleptFor = null;
 
@@ -67,7 +67,7 @@ test("callWithBackoff applies retry jitter to the sleep duration", () => {
   context.Math.random = () => 0.5;
 
   let attempts = 0;
-  const result = context.callWithBackoff(() => {
+  const result = context.runWithBackoff(() => {
     attempts += 1;
     if (attempts === 1) {
       throw new Error("Internal error");
@@ -80,11 +80,11 @@ test("callWithBackoff applies retry jitter to the sleep duration", () => {
   assert.equal(sleptFor, 250);
 });
 
-test("callWithBackoff returns null for HTTP failures and rethrows non-recoverable errors", () => {
+test("runWithBackoff returns null for HTTP failures and rethrows non-recoverable errors", () => {
   const context = loadProject();
 
   assert.equal(
-    context.callWithBackoff(() => {
+    context.runWithBackoff(() => {
       throw new Error("HTTP error 500 when accessing feed");
     }, 2),
     null,
@@ -92,14 +92,14 @@ test("callWithBackoff returns null for HTTP failures and rethrows non-recoverabl
 
   assert.throws(
     () =>
-      context.callWithBackoff(() => {
+      context.runWithBackoff(() => {
         throw new Error("Permission denied");
       }, 2),
     /Permission denied/,
   );
 });
 
-test("sendSummary renders and sends a condensed execution email", () => {
+test("sendExecutionSummary renders and sends a condensed execution email", () => {
   let sentMessage = null;
   const context = loadProject({
     globals: {
@@ -112,7 +112,7 @@ test("sendSummary renders and sends a condensed execution email", () => {
   });
 
   context.CONFIG.email = "user@example.com";
-  context.sendSummary({
+  context.sendExecutionSummary({
     notifications: {
       addedEvents: [
         [["Planning", "2026-04-02T09:00:00Z"], "Work"],
@@ -129,7 +129,7 @@ test("sendSummary renders and sends a condensed execution email", () => {
   assert.match(sentMessage.htmlBody, /Town Hall at 2026-04-04/);
 });
 
-test("processEventCleanup deletes only missing non-recurring managed events", () => {
+test("removeMissingEvents deletes only missing non-recurring managed events", () => {
   const removed = [];
   const context = loadProject({
     globals: {
@@ -195,7 +195,7 @@ test("processEventCleanup deletes only missing non-recurring managed events", ()
     },
   };
 
-  context.processEventCleanup(calendarContext, sessionContext);
+  context.removeMissingEvents(calendarContext, sessionContext);
 
   assert.deepEqual(removed, [["calendar-1", "managed-remove"]]);
   assert.deepEqual(
@@ -204,7 +204,7 @@ test("processEventCleanup deletes only missing non-recurring managed events", ()
   );
 });
 
-test("findManagedRecurringEventInstance ignores non-managed matches and falls back by parent id", () => {
+test("findRecurringEventInstance ignores non-managed matches and falls back by parent id", () => {
   const listCalls = [];
   const context = loadProject({
     globals: {
@@ -246,10 +246,7 @@ test("findManagedRecurringEventInstance ignores non-managed matches and falls ba
     },
   };
 
-  const matches = context.findManagedRecurringEventInstance(
-    "calendar-1",
-    recEvent,
-  );
+  const matches = context.findRecurringEventInstance("calendar-1", recEvent);
 
   assert.equal(matches.length, 1);
   assert.equal(matches[0].id, "managed-instance");
@@ -274,13 +271,11 @@ test("findManagedRecurringEventInstance ignores non-managed matches and falls ba
   ]);
 });
 
-test("processEventInstance updates the matching managed recurring event", () => {
+test("upsertRecurringEventInstance updates the matching managed recurring event", () => {
   const updates = [];
   const context = loadProject();
 
-  context.findManagedRecurringEventInstance = () => [
-    { id: "managed-instance" },
-  ];
+  context.findRecurringEventInstance = () => [{ id: "managed-instance" }];
   context.Calendar.Events.update = (event, calendarId, eventId) => {
     updates.push([event, calendarId, eventId]);
   };
@@ -294,7 +289,9 @@ test("processEventInstance updates the matching managed recurring event", () => 
     },
   };
 
-  context.processEventInstance(recEvent, { targetCalendarId: "calendar-1" });
+  context.upsertRecurringEventInstance(recEvent, {
+    targetCalendarId: "calendar-1",
+  });
 
   assert.equal(updates.length, 1);
   assert.equal(updates[0][1], "calendar-1");

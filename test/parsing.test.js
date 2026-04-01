@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const { loadProject } = require("./support/load-project");
 
-test("parseResponses adds metadata, filters cancelled events, and tracks managed ids", () => {
+test("parseSourceEvents adds metadata, filters cancelled events, and tracks managed ids", () => {
   const context = loadProject();
   const sessionContext = context.createSessionContext();
   const calendarContext = context.createCalendarContext("Target");
@@ -30,7 +30,7 @@ test("parseResponses adds metadata, filters cancelled events, and tracks managed
     ],
   ];
 
-  const events = context.parseResponses(
+  const events = context.parseSourceEvents(
     responses,
     calendarContext,
     sessionContext,
