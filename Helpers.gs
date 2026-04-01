@@ -1196,8 +1196,9 @@ function callWithBackoff(func, maxRetries) {
         return null;
       } else {
         Logger.log("Error, Retrying... [" + err + "]");
-        Utilities.sleep(Math.pow(2, tries) * 100) +
-          Math.round(Math.random() * 100);
+        Utilities.sleep(
+          Math.pow(2, tries) * 100 + Math.round(Math.random() * 100),
+        );
       }
     }
   }

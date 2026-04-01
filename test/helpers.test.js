@@ -57,6 +57,29 @@ test("callWithBackoff retries recoverable failures and returns the eventual resu
   assert.equal(attempts, 3);
 });
 
+test("callWithBackoff applies retry jitter to the sleep duration", () => {
+  const context = loadProject();
+  let sleptFor = null;
+
+  context.Utilities.sleep = (duration) => {
+    sleptFor = duration;
+  };
+  context.Math.random = () => 0.5;
+
+  let attempts = 0;
+  const result = context.callWithBackoff(() => {
+    attempts += 1;
+    if (attempts === 1) {
+      throw new Error("Internal error");
+    }
+
+    return "ok";
+  }, 1);
+
+  assert.equal(result, "ok");
+  assert.equal(sleptFor, 250);
+});
+
 test("callWithBackoff returns null for HTTP failures and rethrows non-recoverable errors", () => {
   const context = loadProject();
 

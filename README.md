@@ -66,6 +66,7 @@ The code supports simple string matches, regex matches, and date-based cutoffs. 
 - This repository is the source for the Apps Script project; there is no build step.
 - `ical.js.gs` is a vendored copy of `ical.js`, and `tzid.gs` is vendored/generated timezone data. Refresh those files from their upstream sources instead of editing application logic into them.
 - Google can still rate-limit access to the source feed if many users request the same URL at once.
+- Transient errors such as rate limits are retried with exponential backoff and a small random jitter.
 - If you need to stop the sync, remove the triggers with `uninstall()` rather than deleting calendar data manually.
 
 ## Testing
