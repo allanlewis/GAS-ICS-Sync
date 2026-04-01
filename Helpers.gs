@@ -440,10 +440,6 @@ function createEvent(event, calendarTz, calendarContext, sessionContext) {
     newEvent.source.title = "link";
   }
 
-  if (event.hasProperty("sequence")) {
-    //newEvent.sequence = icalEvent.sequence; Currently disabled as it is causing issues with recurrence exceptions
-  }
-
   if (CONFIG.descriptionAsTitles && event.hasProperty("description"))
     newEvent.summary = icalEvent.description;
   else if (event.hasProperty("summary")) newEvent.summary = icalEvent.summary;
