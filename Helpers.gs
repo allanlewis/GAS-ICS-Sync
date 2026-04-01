@@ -62,7 +62,7 @@ function deleteAllTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
     if (
-      ["startSync", "install", "main", "checkForUpdate"].includes(
+      ["startSync", "install", "checkForUpdate"].includes(
         triggers[i].getHandlerFunction(),
       )
     ) {
