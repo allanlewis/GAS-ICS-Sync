@@ -7,11 +7,11 @@ const { createAppsScriptRuntime } = require("./apps-script-runtime");
 const PROJECT_FILES = [
   "ical.js.gs",
   "tzid.gs",
-  "Config.gs",
+  "config.gs",
   "filters.gs",
-  "SyncContext.gs",
-  "Helpers.gs",
-  "Code.gs",
+  "sync-context.gs",
+  "sync-helpers.gs",
+  "main.gs",
 ];
 
 function loadProject(options = {}) {

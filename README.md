@@ -14,7 +14,7 @@ The script can:
 ## Setup
 
 1. Create a copy of this Apps Script project in your Google account.
-2. Open `Config.gs` and configure the `CONFIG` settings near the top of the file.
+2. Open `config.gs` and configure the `CONFIG` settings near the top of the file.
 3. Update `filters.gs` if you want to include or exclude events by iCal property.
 4. Run `install()` once and authorize the script when prompted.
 5. Optional: run `startSync()` once to force an immediate sync.
@@ -22,7 +22,7 @@ The script can:
 
 ## Configuration
 
-The main settings live in `Config.gs` in the `CONFIG` object:
+The main settings live in `config.gs` in the `CONFIG` object:
 
 - `sourceCalendars`: map each ICS URL to a target Google Calendar name
 - `howFrequent`: sync interval in minutes
