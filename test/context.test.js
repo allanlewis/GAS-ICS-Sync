@@ -52,3 +52,13 @@ test("shouldSendEmailSummary requires the feature flag and a recipient", () => {
   context.CONFIG.email = "user@example.com";
   assert.equal(context.shouldSendEmailSummary(), false);
 });
+
+test("tzid list matches recent IANA additions and removals", () => {
+  const context = loadProject();
+
+  assert.equal(context.tzids.includes("America/Coyhaique"), true);
+  assert.equal(context.tzids.includes("America/Ciudad_Juarez"), true);
+  assert.equal(context.tzids.includes("Europe/Kyiv"), true);
+  assert.equal(context.tzids.includes("Pacific/Kanton"), true);
+  assert.equal(context.tzids.includes("US/Pacific-New"), false);
+});
