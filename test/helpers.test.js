@@ -203,3 +203,100 @@ test("processEventCleanup deletes only missing non-recurring managed events", ()
     [[["Remove", "2026-04-03T09:00:00Z"], "Work"]],
   );
 });
+
+test("findManagedRecurringEventInstance ignores non-managed matches and falls back by parent id", () => {
+  const listCalls = [];
+  const context = loadProject({
+    globals: {
+      Calendar: {
+        Events: {
+          list(calendarId, query) {
+            listCalls.push([calendarId, query]);
+            if (listCalls.length === 1) {
+              return {
+                items: [
+                  {
+                    id: "foreign-instance",
+                    extendedProperties: { private: { fromGAS: "false" } },
+                  },
+                ],
+              };
+            }
+
+            return {
+              items: [
+                {
+                  id: "managed-instance",
+                  extendedProperties: { private: { fromGAS: "true" } },
+                },
+              ],
+            };
+          },
+        },
+      },
+    },
+  });
+
+  const recEvent = {
+    recurringEventId: "20260405T090000Z",
+    extendedProperties: {
+      private: {
+        id: "series-1",
+      },
+    },
+  };
+
+  const matches = context.findManagedRecurringEventInstance(
+    "calendar-1",
+    recEvent,
+  );
+
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].id, "managed-instance");
+  assert.deepEqual(JSON.parse(JSON.stringify(listCalls)), [
+    [
+      "calendar-1",
+      {
+        singleEvents: true,
+        privateExtendedProperty: "rec-id=series-1_20260405T090000Z",
+      },
+    ],
+    [
+      "calendar-1",
+      {
+        singleEvents: true,
+        orderBy: "startTime",
+        maxResults: 1,
+        timeMin: "20260405T090000Z",
+        privateExtendedProperty: "id=series-1",
+      },
+    ],
+  ]);
+});
+
+test("processEventInstance updates the matching managed recurring event", () => {
+  const updates = [];
+  const context = loadProject();
+
+  context.findManagedRecurringEventInstance = () => [
+    { id: "managed-instance" },
+  ];
+  context.Calendar.Events.update = (event, calendarId, eventId) => {
+    updates.push([event, calendarId, eventId]);
+  };
+
+  const recEvent = {
+    recurringEventId: "20260405T090000Z",
+    extendedProperties: {
+      private: {
+        id: "series-1",
+      },
+    },
+  };
+
+  context.processEventInstance(recEvent, { targetCalendarId: "calendar-1" });
+
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0][1], "calendar-1");
+  assert.equal(updates[0][2], "managed-instance");
+});

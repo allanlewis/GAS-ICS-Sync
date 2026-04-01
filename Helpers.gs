@@ -757,17 +757,10 @@ function processEventInstance(recEvent, calendarContext) {
       recEvent.recurringEventId,
   );
 
-  var eventInstanceToPatch = callWithBackoff(function () {
-    return Calendar.Events.list(calendarContext.targetCalendarId, {
-      singleEvents: true,
-      privateExtendedProperty: "fromGAS=true",
-      privateExtendedProperty:
-        "rec-id=" +
-        recEvent.extendedProperties.private["id"] +
-        "_" +
-        recEvent.recurringEventId,
-    }).items;
-  }, RUNTIME_SETTINGS.defaultMaxRetries);
+  var eventInstanceToPatch = findManagedRecurringEventInstance(
+    calendarContext.targetCalendarId,
+    recEvent,
+  );
 
   if (eventInstanceToPatch == null || eventInstanceToPatch.length == 0) {
     if (recEvent.recurringEventId.length == 10) {
@@ -775,17 +768,10 @@ function processEventInstance(recEvent, calendarContext) {
     } else if (recEvent.recurringEventId.substr(-1) !== "Z") {
       recEvent.recurringEventId += "Z";
     }
-    eventInstanceToPatch = callWithBackoff(function () {
-      return Calendar.Events.list(calendarContext.targetCalendarId, {
-        singleEvents: true,
-        orderBy: "startTime",
-        maxResults: 1,
-        timeMin: recEvent.recurringEventId,
-        privateExtendedProperty: "fromGAS=true",
-        privateExtendedProperty:
-          "id=" + recEvent.extendedProperties.private["id"],
-      }).items;
-    }, RUNTIME_SETTINGS.defaultMaxRetries);
+    eventInstanceToPatch = findManagedRecurringEventInstance(
+      calendarContext.targetCalendarId,
+      recEvent,
+    );
   }
 
   if (eventInstanceToPatch !== null && eventInstanceToPatch.length == 1) {
@@ -803,6 +789,47 @@ function processEventInstance(recEvent, calendarContext) {
       Calendar.Events.insert(recEvent, calendarContext.targetCalendarId);
     }, RUNTIME_SETTINGS.defaultMaxRetries);
   }
+}
+
+function findManagedRecurringEventInstance(targetCalendarId, recEvent) {
+  var matchingItems = callWithBackoff(function () {
+    return Calendar.Events.list(targetCalendarId, {
+      singleEvents: true,
+      privateExtendedProperty:
+        "rec-id=" +
+        recEvent.extendedProperties.private["id"] +
+        "_" +
+        recEvent.recurringEventId,
+    }).items;
+  }, RUNTIME_SETTINGS.defaultMaxRetries);
+  matchingItems = filterManagedEvents(matchingItems);
+
+  if (matchingItems.length > 0) {
+    return matchingItems;
+  }
+
+  return filterManagedEvents(
+    callWithBackoff(function () {
+      return Calendar.Events.list(targetCalendarId, {
+        singleEvents: true,
+        orderBy: "startTime",
+        maxResults: 1,
+        timeMin: recEvent.recurringEventId,
+        privateExtendedProperty:
+          "id=" + recEvent.extendedProperties.private["id"],
+      }).items;
+    }, RUNTIME_SETTINGS.defaultMaxRetries),
+  );
+}
+
+function filterManagedEvents(events) {
+  return (events || []).filter(function (event) {
+    return (
+      event.extendedProperties != null &&
+      event.extendedProperties.private != null &&
+      event.extendedProperties.private["fromGAS"] === "true"
+    );
+  });
 }
 
 /**

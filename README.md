@@ -47,6 +47,7 @@ Additional notes:
 - `appsscript.json` already enables the Calendar advanced service.
 - The script creates a trigger for regular syncs and a daily update check.
 - The update checker only sends mail if `email` is configured.
+- Recurring instances are matched against managed events first, then fall back to the parent series ID so unrelated calendar items are not patched by mistake.
 
 ## Filtering
 
