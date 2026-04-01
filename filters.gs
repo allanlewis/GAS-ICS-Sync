@@ -40,3 +40,98 @@ var filters = [
   }
 ];
 */
+
+function applyConfiguredFilters(events) {
+  if (!filters || filters.length === 0) {
+    return events;
+  }
+
+  var includeFilters = filters.filter(function (filter) {
+    return filter.type === "include";
+  });
+  var excludeFilters = filters.filter(function (filter) {
+    return filter.type === "exclude";
+  });
+
+  return events.filter(function (event) {
+    var included =
+      includeFilters.length === 0 ||
+      includeFilters.some(function (filter) {
+        return eventMatchesFilter(event, filter);
+      });
+    if (!included) {
+      return false;
+    }
+
+    return !excludeFilters.some(function (filter) {
+      return eventMatchesFilter(event, filter);
+    });
+  });
+}
+
+function eventMatchesFilter(event, filter) {
+  if (!filter || !filter.parameter || !filter.comparison) {
+    return false;
+  }
+
+  if (filter.comparison === "<" || filter.comparison === ">") {
+    return compareDateFilter(event, filter);
+  }
+
+  if (!event.hasProperty(filter.parameter)) {
+    return false;
+  }
+
+  var values = event
+    .getAllProperties(filter.parameter)
+    .map(function (property) {
+      return String(property.getFirstValue());
+    })
+    .filter(function (value) {
+      return value !== "";
+    });
+
+  return values.some(function (value) {
+    return matchesTextFilter(value, filter);
+  });
+}
+
+function matchesTextFilter(value, filter) {
+  var criteria = filter.criterias || [];
+
+  return criteria.some(function (criterion) {
+    switch (filter.comparison) {
+      case "equals":
+        return value === criterion;
+      case "begins with":
+        return value.indexOf(criterion) === 0;
+      case "contains":
+        return value.indexOf(criterion) !== -1;
+      case "regex":
+        return RegExp(criterion).test(value);
+      default:
+        return false;
+    }
+  });
+}
+
+function compareDateFilter(event, filter) {
+  if (!event.hasProperty(filter.parameter)) {
+    return false;
+  }
+
+  var eventTime = new ICAL.Time.fromString(
+    event.getFirstPropertyValue(filter.parameter).toString(),
+    event.getFirstProperty(filter.parameter),
+  );
+  var comparisonTime = ICAL.Time.fromJSDate(new Date());
+  if (filter.offset) {
+    comparisonTime.adjust(parseInt(filter.offset, 10), 0, 0, 0);
+  }
+
+  if (filter.comparison === "<") {
+    return eventTime.compare(comparisonTime) < 0;
+  }
+
+  return eventTime.compare(comparisonTime) > 0;
+}
