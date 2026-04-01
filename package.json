@@ -1,0 +1,8 @@
+{
+  "name": "gas-ics-sync",
+  "private": true,
+  "scripts": {
+    "format": "npx prettier@3 --write \"*.{gs,md,json}\" \"test/**/*.js\"",
+    "test": "node --test test/*.test.js"
+  }
+}

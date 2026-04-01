@@ -68,6 +68,13 @@ The code supports simple string matches, regex matches, and date-based cutoffs. 
 - Google can still rate-limit access to the source feed if many users request the same URL at once.
 - If you need to stop the sync, remove the triggers with `uninstall()` rather than deleting calendar data manually.
 
+## Testing
+
+This repository includes a local Node test harness for the Apps Script code.
+
+- Run `npm test` to execute the suite.
+- The tests use the built-in `node --test` runner and do not require a build step.
+
 ## Contributing
 
 Contributions are welcome through pull requests.
