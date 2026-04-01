@@ -138,11 +138,6 @@ function createAppsScriptRuntime(overrides = {}) {
     UrlFetchApp: {
       fetch: notConfigured("UrlFetchApp.fetch"),
     },
-    PropertiesService: {
-      getScriptProperties: notConfigured(
-        "PropertiesService.getScriptProperties",
-      ),
-    },
   };
 
   return Object.assign(runtime, overrides.globals || {});

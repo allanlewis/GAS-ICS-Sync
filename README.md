@@ -38,15 +38,14 @@ The main settings live in `Config.gs` in the `CONFIG` object:
 - `defaultAllDayReminder`: custom reminder for all-day events
 - `overrideVisibility`: force event visibility when set
 - `emailSummary`: send an email after added, modified, or removed items
-- `email`: destination for the summary and update notices
+- `email`: destination for the summary emails
 - `customEmailSubject`: override the summary email subject
 - `dateFormat`: format used in summary emails
 
 Additional notes:
 
 - `appsscript.json` already enables the Calendar advanced service.
-- The script creates a trigger for regular syncs and a daily update check.
-- The update checker only sends mail if `email` is configured.
+- The script creates a trigger for regular syncs.
 - Recurring instances are matched against managed events first, then fall back to the parent series ID so unrelated calendar items are not patched by mistake.
 
 ## Filtering

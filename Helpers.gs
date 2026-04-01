@@ -61,11 +61,7 @@ function condenseCalendarMap(calendarMap) {
 function deleteAllTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
-    if (
-      ["startSync", "install", "checkForUpdate"].includes(
-        triggers[i].getHandlerFunction(),
-      )
-    ) {
+    if (["startSync", "install"].includes(triggers[i].getHandlerFunction())) {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
@@ -1146,43 +1142,4 @@ function callWithBackoff(func, maxRetries) {
     }
   }
   return null;
-}
-
-/**
- * Checks for a new version of the script at https://github.com/derekantrican/GAS-ICS-Sync/releases.
- * Will notify the user once if a new version was released.
- */
-function checkForUpdate() {
-  // No need to check if we can't alert anyway
-  if (CONFIG.email == "") return;
-
-  var lastAlertedVersion = PropertiesService.getScriptProperties().getProperty(
-    "alertedForNewVersion",
-  );
-  try {
-    var thisVersion = RUNTIME_SETTINGS.currentVersion;
-    var latestVersion = getLatestVersion();
-
-    if (latestVersion > thisVersion && latestVersion != lastAlertedVersion) {
-      MailApp.sendEmail(
-        CONFIG.email,
-        `Version ${latestVersion} of GAS-ICS-Sync is available! (You have ${thisVersion})`,
-        "You can see the latest release here: https://github.com/derekantrican/GAS-ICS-Sync/releases",
-      );
-
-      PropertiesService.getScriptProperties().setProperty(
-        "alertedForNewVersion",
-        latestVersion,
-      );
-    }
-  } catch (e) {}
-
-  function getLatestVersion() {
-    var json_encoded = UrlFetchApp.fetch(
-      "https://api.github.com/repos/derekantrican/GAS-ICS-Sync/releases?per_page=1",
-    );
-    var json_decoded = JSON.parse(json_encoded);
-    var version = json_decoded[0]["tag_name"];
-    return Number(version);
-  }
 }

@@ -73,9 +73,6 @@ function install() {
     .everyMinutes(getValidTriggerFrequency(CONFIG.howFrequent))
     .create();
   ScriptApp.newTrigger("startSync").timeBased().after(1000).create();
-
-  //Schedule sync routine to look for update once per day
-  ScriptApp.newTrigger("checkForUpdate").timeBased().everyDays(1).create();
 }
 
 function uninstall() {

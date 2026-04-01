@@ -24,11 +24,10 @@ var CONFIG = {
   // See https://github.com/derekantrican/GAS-ICS-Sync/issues/75 for why this is necessary.
   overrideVisibility: "", // "default", "public", "private", or "confidential"
   emailSummary: true, // Email a summary when events are added/modified/removed
-  email: "allanlewis99@gmail.com", // Required for summary emails and update notifications
+  email: "allanlewis99@gmail.com", // Required for summary emails
 };
 
 var RUNTIME_SETTINGS = {
-  currentVersion: 5.7,
   defaultMaxRetries: 10,
   runGuardTimeoutMs: 5000,
 };
