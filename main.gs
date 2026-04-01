@@ -96,7 +96,7 @@ function startSync() {
     for (var calendar of sourceCalendars) {
       var calendarContext = createCalendarContext(calendar[0]);
       var sourceCalendarURLs = calendar[1];
-      var vevents = [];
+      var sourceEvents = [];
 
       //------------------------ Fetch URL items ------------------------
       var responses = fetchSourceCalendars(sourceCalendarURLs);
@@ -157,18 +157,24 @@ function startSync() {
         );
 
         //------------------------ Parse ical events --------------------------
-        vevents = parseResponses(responses, calendarContext, sessionContext);
-        Logger.log("Parsed " + vevents.length + " events from ical sources");
+        sourceEvents = parseResponses(
+          responses,
+          calendarContext,
+          sessionContext,
+        );
+        Logger.log(
+          "Parsed " + sourceEvents.length + " events from ical sources",
+        );
       }
 
       //------------------------ Process ical events ------------------------
       if (CONFIG.addEventsToCalendar || CONFIG.modifyExistingEvents) {
-        Logger.log("Processing " + vevents.length + " events");
+        Logger.log("Processing " + sourceEvents.length + " events");
         var calendarTz = callWithBackoff(function () {
           return Calendar.Settings.get("timezone").value;
         }, RUNTIME_SETTINGS.defaultMaxRetries);
 
-        vevents.forEach(function (event) {
+        sourceEvents.forEach(function (event) {
           processEvent(event, calendarTz, calendarContext, sessionContext);
         });
 
@@ -192,8 +198,8 @@ function startSync() {
           calendarContext.recurringEvents.length +
           " Recurrence Instances!",
       );
-      for (var recEvent of calendarContext.recurringEvents) {
-        processEventInstance(recEvent, calendarContext);
+      for (var recurringEvent of calendarContext.recurringEvents) {
+        processEventInstance(recurringEvent, calendarContext);
       }
     }
 

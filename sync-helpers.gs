@@ -6,29 +6,29 @@
  * @param {?integer} The manually set frequency that the user intends to set.
  * @return {integer} The closest valid value to the intended frequency setting. Defaulting to 15 if no valid input is provided.
  */
-function getValidTriggerFrequency(origFrequency) {
-  if (!origFrequency > 0) {
+function getValidTriggerFrequency(requestedFrequency) {
+  if (!requestedFrequency > 0) {
     Logger.log("No valid frequency specified. Defaulting to 15 minutes.");
     return 15;
   }
 
-  var adjFrequency = Math.round(origFrequency / 5) * 5; // Set the number to be the closest divisible-by-5
-  adjFrequency = Math.max(adjFrequency, 1); // Make sure the number is at least 1 (0 is not valid for the trigger)
-  adjFrequency = Math.min(adjFrequency, 15); // Make sure the number is at most 15 (will check for the 30 value below)
+  var validFrequency = Math.round(requestedFrequency / 5) * 5; // Set the number to be the closest divisible-by-5
+  validFrequency = Math.max(validFrequency, 1); // Make sure the number is at least 1 (0 is not valid for the trigger)
+  validFrequency = Math.min(validFrequency, 15); // Make sure the number is at most 15 (will check for the 30 value below)
 
   if (
-    adjFrequency == 15 &&
-    Math.abs(origFrequency - 30) < Math.abs(origFrequency - 15)
+    validFrequency == 15 &&
+    Math.abs(requestedFrequency - 30) < Math.abs(requestedFrequency - 15)
   )
-    adjFrequency = 30; // If we adjusted to 15, but the original number is actually closer to 30, set it to 30 instead
+    validFrequency = 30; // If we adjusted to 15, but the original number is actually closer to 30, set it to 30 instead
 
   Logger.log(
     "Intended frequency = " +
-      origFrequency +
+      requestedFrequency +
       ", Adjusted frequency = " +
-      adjFrequency,
+      validFrequency,
   );
-  return adjFrequency;
+  return validFrequency;
 }
 
 /**
@@ -152,10 +152,10 @@ function setupTargetCalendar(targetCalendarName) {
  */
 function parseResponses(responses, calendarContext, sessionContext) {
   var result = [];
-  for (var itm of responses) {
-    var resp = itm[0];
-    var colorId = itm[1];
-    var jcalData = ICAL.parse(resp);
+  for (var responseItem of responses) {
+    var calendarData = responseItem[0];
+    var colorId = responseItem[1];
+    var jcalData = ICAL.parse(calendarData);
     var component = new ICAL.Component(jcalData);
 
     ICAL.helpers.updateTimezones(component);
@@ -170,12 +170,12 @@ function parseResponses(responses, calendarContext, sessionContext) {
         event.addPropertyWithValue("color", colorId);
       });
 
-    var calName =
+    var calendarName =
       component.getFirstPropertyValue("x-wr-calname") ||
       component.getFirstPropertyValue("name");
-    if (calName != null)
+    if (calendarName != null)
       allEvents.forEach(function (event) {
-        event.addPropertyWithValue("parentCal", calName);
+        event.addPropertyWithValue("parentCal", calendarName);
       });
 
     result = [].concat(allEvents, result);
@@ -193,12 +193,12 @@ function parseResponses(responses, calendarContext, sessionContext) {
           //Keep recurrences to properly filter them later on
           return true;
         }
-        var eventEnde;
-        eventEnde = new ICAL.Time.fromString(
+        var eventEnd;
+        eventEnd = new ICAL.Time.fromString(
           event.getFirstPropertyValue("dtend").toString(),
           event.getFirstProperty("dtend"),
         );
-        return eventEnde.compare(sessionContext.startUpdateTime) >= 0;
+        return eventEnd.compare(sessionContext.startUpdateTime) >= 0;
       } catch (e) {
         return true;
       }
@@ -411,8 +411,9 @@ function createEvent(event, calendarTz, calendarContext, sessionContext) {
         var name = parseAttendeeName(att.toICALString());
         if (name != null) newAttendee["displayName"] = name;
 
-        var resp = parseAttendeeResp(att.toICALString());
-        if (resp != null) newAttendee["responseStatus"] = resp;
+        var responseStatus = parseAttendeeResp(att.toICALString());
+        if (responseStatus != null)
+          newAttendee["responseStatus"] = responseStatus;
 
         newEvent.attendees.push(newAttendee);
       }
@@ -450,8 +451,8 @@ function createEvent(event, calendarTz, calendarContext, sessionContext) {
   }
 
   if (CONFIG.addCalToTitle && event.hasProperty("parentCal")) {
-    var calName = event.getFirstPropertyValue("parentCal");
-    newEvent.summary = "(" + calName + ") " + newEvent.summary;
+    var calendarName = event.getFirstPropertyValue("parentCal");
+    newEvent.summary = "(" + calendarName + ") " + newEvent.summary;
   }
 
   if (event.hasProperty("description"))
@@ -1054,29 +1055,29 @@ function sendSummary(sessionContext) {
   Logger.log("Removed events (condensed): %s", removedEvents);
 
   body = "GAS-ICS-Sync made the following changes to your calendar:<br/>";
-  for (var tgtCal of addedEvents) {
-    body += `<br/>${tgtCal[0]}: ${tgtCal[1].length} added events<br/><ul>`;
-    for (var addedEvent of tgtCal[1]) {
-      Logger.log("Added event: %s", addedEvent);
-      body += "<li>" + addedEvent[0][0] + " at " + addedEvent[0][1] + "</li>";
+  for (var targetCalendar of addedEvents) {
+    body += `<br/>${targetCalendar[0]}: ${targetCalendar[1].length} added events<br/><ul>`;
+    for (var eventChange of targetCalendar[1]) {
+      Logger.log("Added event: %s", eventChange);
+      body += "<li>" + eventChange[0][0] + " at " + eventChange[0][1] + "</li>";
     }
     body += "</ul>";
   }
 
-  for (var tgtCal of modifiedEvents) {
-    body += `<br/>${tgtCal[0]}: ${tgtCal[1].length} modified events<br/><ul>`;
-    for (var addedEvent of tgtCal[1]) {
-      Logger.log("Modified event: %s", addedEvent);
-      body += "<li>" + addedEvent[0][0] + " at " + addedEvent[0][1] + "</li>";
+  for (var targetCalendar of modifiedEvents) {
+    body += `<br/>${targetCalendar[0]}: ${targetCalendar[1].length} modified events<br/><ul>`;
+    for (var eventChange of targetCalendar[1]) {
+      Logger.log("Modified event: %s", eventChange);
+      body += "<li>" + eventChange[0][0] + " at " + eventChange[0][1] + "</li>";
     }
     body += "</ul>";
   }
 
-  for (var tgtCal of removedEvents) {
-    body += `<br/>${tgtCal[0]}: ${tgtCal[1].length} removed events<br/><ul>`;
-    for (var addedEvent of tgtCal[1]) {
-      Logger.log("Removed event: %s", addedEvent);
-      body += "<li>" + addedEvent[0][0] + " at " + addedEvent[0][1] + "</li>";
+  for (var targetCalendar of removedEvents) {
+    body += `<br/>${targetCalendar[0]}: ${targetCalendar[1].length} removed events<br/><ul>`;
+    for (var eventChange of targetCalendar[1]) {
+      Logger.log("Removed event: %s", eventChange);
+      body += "<li>" + eventChange[0][0] + " at " + eventChange[0][1] + "</li>";
     }
     body += "</ul>";
   }
