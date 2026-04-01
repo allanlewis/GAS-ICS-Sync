@@ -23,7 +23,6 @@ var CONFIG = {
   defaultAllDayReminder: -1, // Minutes before all-day events (-1 = no reminder)
   // See https://github.com/derekantrican/GAS-ICS-Sync/issues/75 for why this is necessary.
   overrideVisibility: "", // "default", "public", "private", or "confidential"
-  addTasks: false,
   emailSummary: true, // Email a summary when events are added/modified/removed
   email: "allanlewis99@gmail.com", // Required for summary emails and update notifications
 };

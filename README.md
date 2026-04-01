@@ -8,7 +8,6 @@ The script can:
 - update changed events
 - remove events that disappear from the feed
 - preserve recurring series and their instances
-- optionally sync `VTODO` items into Google Tasks
 - optionally email a summary of changes
 - optionally apply filters to incoming calendar items
 
@@ -38,7 +37,6 @@ The main settings live in `Config.gs` in the `CONFIG` object:
 - `addAttendees`: copy attendees from the ICS feed
 - `defaultAllDayReminder`: custom reminder for all-day events
 - `overrideVisibility`: force event visibility when set
-- `addTasks`: sync `VTODO` entries to Google Tasks
 - `emailSummary`: send an email after added, modified, or removed items
 - `email`: destination for the summary and update notices
 - `customEmailSubject`: override the summary email subject
@@ -46,7 +44,7 @@ The main settings live in `Config.gs` in the `CONFIG` object:
 
 Additional notes:
 
-- `appsscript.json` already enables the Calendar and Tasks advanced services.
+- `appsscript.json` already enables the Calendar advanced service.
 - The script creates a trigger for regular syncs and a daily update check.
 - The update checker only sends mail if `email` is configured.
 

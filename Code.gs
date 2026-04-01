@@ -189,11 +189,6 @@ function startSync() {
         Logger.log("Done checking events for removal");
       }
 
-      //------------------------ Process Tasks ------------------------
-      if (CONFIG.addTasks) {
-        processTasks(responses);
-      }
-
       //------------------------ Add Recurring Event Instances ------------------------
       Logger.log(
         "Processing " +

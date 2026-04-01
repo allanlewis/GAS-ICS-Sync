@@ -25,7 +25,6 @@ test("startSync orchestrates one calendar sync and releases the lock", () => {
   context.CONFIG.addEventsToCalendar = true;
   context.CONFIG.modifyExistingEvents = false;
   context.CONFIG.removeEventsFromCalendar = false;
-  context.CONFIG.addTasks = false;
   context.CONFIG.emailSummary = true;
   context.CONFIG.email = "user@example.com";
 

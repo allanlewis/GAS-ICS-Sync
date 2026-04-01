@@ -138,19 +138,6 @@ function createAppsScriptRuntime(overrides = {}) {
     UrlFetchApp: {
       fetch: notConfigured("UrlFetchApp.fetch"),
     },
-    Tasks: {
-      Tasklists: {
-        list: notConfigured("Tasks.Tasklists.list"),
-      },
-      Tasks: {
-        list: notConfigured("Tasks.Tasks.list"),
-        insert: notConfigured("Tasks.Tasks.insert"),
-        remove: notConfigured("Tasks.Tasks.remove"),
-      },
-      newTask() {
-        return {};
-      },
-    },
     PropertiesService: {
       getScriptProperties: notConfigured(
         "PropertiesService.getScriptProperties",
