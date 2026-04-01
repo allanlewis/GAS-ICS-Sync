@@ -128,3 +128,78 @@ test("sendSummary renders and sends a condensed execution email", () => {
   assert.match(sentMessage.htmlBody, /Work: 2 added events/);
   assert.match(sentMessage.htmlBody, /Town Hall at 2026-04-04/);
 });
+
+test("processEventCleanup deletes only missing non-recurring managed events", () => {
+  const removed = [];
+  const context = loadProject({
+    globals: {
+      Calendar: {
+        Events: {
+          remove(calendarId, eventId) {
+            removed.push([calendarId, eventId]);
+          },
+        },
+      },
+    },
+  });
+
+  context.CONFIG.emailSummary = true;
+  context.CONFIG.email = "user@example.com";
+
+  const sessionContext = {
+    notifications: {
+      addedEvents: [],
+      modifiedEvents: [],
+      removedEvents: [],
+    },
+  };
+  const calendarContext = {
+    targetCalendarId: "calendar-1",
+    targetCalendarName: "Work",
+    icsEventIds: ["keep-1", "series-1_20260402T090000Z"],
+    managedEvents: {
+      events: [
+        {
+          id: "managed-keep",
+          summary: "Keep",
+          start: { dateTime: "2026-04-02T09:00:00Z" },
+          extendedProperties: {
+            private: {
+              id: "keep-1",
+            },
+          },
+        },
+        {
+          id: "managed-remove",
+          summary: "Remove",
+          start: { dateTime: "2026-04-03T09:00:00Z" },
+          extendedProperties: {
+            private: {
+              id: "remove-1",
+            },
+          },
+        },
+        {
+          id: "managed-instance",
+          summary: "Recurring instance",
+          start: { dateTime: "2026-04-04T09:00:00Z" },
+          recurringEventId: "20260404T090000Z",
+          extendedProperties: {
+            private: {
+              id: "series-1",
+              "rec-id": "series-1_20260404T090000Z",
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  context.processEventCleanup(calendarContext, sessionContext);
+
+  assert.deepEqual(removed, [["calendar-1", "managed-remove"]]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sessionContext.notifications.removedEvents)),
+    [[["Remove", "2026-04-03T09:00:00Z"], "Work"]],
+  );
+});

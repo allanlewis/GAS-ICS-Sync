@@ -820,38 +820,32 @@ function processEventCleanup(calendarContext, sessionContext) {
         null;
       return (
         managedId != null &&
-        calendarContext.icsEventIds.indexOf(managedId) === -1
+        calendarContext.icsEventIds.indexOf(managedId) === -1 &&
+        event.recurringEventId == null
       );
     },
   );
-  const existingEvents = calendarContext.managedEvents.events;
   if (toDelete.length >= 1000) {
     Logger.log(`Refusing to delete ${toDelete.length} events!`);
     return;
   }
-  for (var i = 0; i < existingEvents.length; i++) {
-    var currentEvent = existingEvents[i];
+  for (var i = 0; i < toDelete.length; i++) {
+    var currentEvent = toDelete[i];
     var currentID =
       currentEvent.extendedProperties.private["rec-id"] ||
       currentEvent.extendedProperties.private["id"];
-    var feedIndex = calendarContext.icsEventIds.indexOf(currentID);
 
-    if (feedIndex == -1 && currentEvent.recurringEventId == null) {
-      Logger.log("Deleting old event " + currentID);
-      callWithBackoff(function () {
-        Calendar.Events.remove(
-          calendarContext.targetCalendarId,
-          currentEvent.id,
-        );
-      }, RUNTIME_SETTINGS.defaultMaxRetries);
+    Logger.log("Deleting old event " + currentID);
+    callWithBackoff(function () {
+      Calendar.Events.remove(calendarContext.targetCalendarId, currentEvent.id);
+    }, RUNTIME_SETTINGS.defaultMaxRetries);
 
-      if (shouldSendEmailSummary()) {
-        recordSyncChange(
-          sessionContext.notifications.removedEvents,
-          calendarContext.targetCalendarName,
-          currentEvent,
-        );
-      }
+    if (shouldSendEmailSummary()) {
+      recordSyncChange(
+        sessionContext.notifications.removedEvents,
+        calendarContext.targetCalendarName,
+        currentEvent,
+      );
     }
   }
 }

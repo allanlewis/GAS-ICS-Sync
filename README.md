@@ -27,7 +27,7 @@ The main settings live in `Config.gs` in the `CONFIG` object:
 
 - `sourceCalendars`: map each ICS URL to a target Google Calendar name
 - `howFrequent`: sync interval in minutes
-- `onlyFutureEvents`: sync only future events and clean up past recurring instances during cleanup
+- `onlyFutureEvents`: sync only future events and preserve recurring instances during cleanup
 - `addEventsToCalendar`: create new events from the feed
 - `modifyExistingEvents`: update existing synced events when the feed changes
 - `removeEventsFromCalendar`: delete synced events that no longer exist in the feed
