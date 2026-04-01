@@ -1,3 +1,6 @@
+/* Vendored/generated timezone mapping data.
+ * Keep application changes out of this file and refresh it from the source dataset when needed.
+ */
 var tzids = [
   "Africa/Abidjan",
   "Africa/Accra",
