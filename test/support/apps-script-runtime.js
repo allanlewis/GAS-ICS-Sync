@@ -72,12 +72,37 @@ function notConfigured(name) {
   };
 }
 
+function createConsoleLogMethod(entries) {
+  return function () {
+    entries.push(Array.from(arguments));
+  };
+}
+
 function createAppsScriptRuntime(overrides = {}) {
   const lock = overrides.lock || createScriptLock();
+  const loggerEntries = [];
+  const consoleEntries = {
+    log: [],
+    info: [],
+    warn: [],
+    error: [],
+  };
 
   const runtime = {
+    __logEntries: {
+      logger: loggerEntries,
+      console: consoleEntries,
+    },
     Logger: {
-      log() {},
+      log() {
+        loggerEntries.push(Array.from(arguments));
+      },
+    },
+    console: {
+      log: createConsoleLogMethod(consoleEntries.log),
+      info: createConsoleLogMethod(consoleEntries.info),
+      warn: createConsoleLogMethod(consoleEntries.warn),
+      error: createConsoleLogMethod(consoleEntries.error),
     },
     Utilities: {
       DigestAlgorithm: {

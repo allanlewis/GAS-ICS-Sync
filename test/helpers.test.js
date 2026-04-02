@@ -127,6 +127,9 @@ test("sendExecutionSummary renders and sends a condensed execution email", () =>
   assert.match(sentMessage.subject, /2 new, 1 modified, 0 deleted/);
   assert.match(sentMessage.htmlBody, /Work: 2 added events/);
   assert.match(sentMessage.htmlBody, /Town Hall at 2026-04-04/);
+  assert.deepEqual(context.__logEntries.logger, [
+    ["Sending execution summary email: added=2 modified=1 removed=0"],
+  ]);
 });
 
 test("removeMissingEvents deletes only missing non-recurring managed events", () => {
@@ -202,6 +205,11 @@ test("removeMissingEvents deletes only missing non-recurring managed events", ()
     JSON.parse(JSON.stringify(sessionContext.notifications.removedEvents)),
     [[["Remove", "2026-04-03T09:00:00Z"], "Work"]],
   );
+  assert.deepEqual(context.__logEntries.logger, [
+    [
+      "Deleting managed event: calendar=Work eventId=remove-1 summary=Remove start=2026-04-03T09:00:00Z",
+    ],
+  ]);
 });
 
 test("findRecurringEventInstance ignores non-managed matches and falls back by parent id", () => {
@@ -296,4 +304,12 @@ test("upsertRecurringEventInstance updates the matching managed recurring event"
   assert.equal(updates.length, 1);
   assert.equal(updates[0][1], "calendar-1");
   assert.equal(updates[0][2], "managed-instance");
+  assert.deepEqual(context.__logEntries.logger, [
+    [
+      "Processing recurring instance: eventId=series-1 recurrenceId=20260405T090000Z summary=(no summary) start=(no start)",
+    ],
+    [
+      "Updating recurring instance: eventId=series-1 recurrenceId=20260405T090000Z matchedEventId=managed-instance",
+    ],
+  ]);
 });

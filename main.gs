@@ -83,17 +83,21 @@ function startSync() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(RUNTIME_SETTINGS.runGuardTimeoutMs)) {
     const msg = "Another iteration is currently running!";
-    Logger.log(msg);
+    Logger.log("[WARN] Sync skipped: another iteration is already running.");
     return ContentService.createTextOutput(msg).setMimeType(
       ContentService.MimeType.TEXT,
     );
   }
 
   var sessionContext = createSessionContext();
+  var sourceCalendars = condenseCalendarMap(CONFIG.sourceCalendars);
+  Logger.log("Starting sync: targetCalendars=" + sourceCalendars.length);
 
   try {
-    var sourceCalendars = condenseCalendarMap(CONFIG.sourceCalendars);
     for (var calendar of sourceCalendars) {
+      var notificationCountsBefore = getNotificationCounts(
+        sessionContext.notifications,
+      );
       var calendarContext = createCalendarContext(calendar[0]);
       var sourceCalendarURLs = calendar[1];
       var sourceEvents = [];
@@ -101,10 +105,10 @@ function startSync() {
       //------------------------ Fetch URL items ------------------------
       var responses = fetchSourceCalendars(sourceCalendarURLs);
       Logger.log(
-        "Syncing " +
-          responses.length +
-          " calendars to " +
-          calendarContext.targetCalendarName,
+        "Fetched source feeds: calendar=" +
+          calendarContext.targetCalendarName +
+          " sourceFeeds=" +
+          responses.length,
       );
 
       //------------------------ Get target calendar information------------------------
@@ -112,7 +116,12 @@ function startSync() {
         calendarContext.targetCalendarName,
       );
       calendarContext.targetCalendarId = targetCalendar.id;
-      Logger.log("Working on calendar: " + calendarContext.targetCalendarId);
+      Logger.log(
+        "Resolved target calendar: calendar=" +
+          calendarContext.targetCalendarName +
+          " calendarId=" +
+          calendarContext.targetCalendarId,
+      );
 
       //------------------------ Parse existing events --------------------------
       if (
@@ -150,10 +159,12 @@ function startSync() {
 
         calendarContext.managedEvents = createManagedEventState(calendarEvents);
         Logger.log(
-          "Fetched " +
-            calendarContext.managedEvents.events.length +
-            " existing events from " +
-            calendarContext.targetCalendarName,
+          "Fetched managed events: calendar=" +
+            calendarContext.targetCalendarName +
+            " calendarId=" +
+            calendarContext.targetCalendarId +
+            " managedEvents=" +
+            calendarContext.managedEvents.events.length,
         );
 
         //------------------------ Parse ical events --------------------------
@@ -163,13 +174,25 @@ function startSync() {
           sessionContext,
         );
         Logger.log(
-          "Parsed " + sourceEvents.length + " events from ical sources",
+          "Parsed source events: calendar=" +
+            calendarContext.targetCalendarName +
+            " calendarId=" +
+            calendarContext.targetCalendarId +
+            " sourceEvents=" +
+            sourceEvents.length,
         );
       }
 
       //------------------------ Process ical events ------------------------
       if (CONFIG.addEventsToCalendar || CONFIG.modifyExistingEvents) {
-        Logger.log("Processing " + sourceEvents.length + " events");
+        Logger.log(
+          "Syncing events: calendar=" +
+            calendarContext.targetCalendarName +
+            " calendarId=" +
+            calendarContext.targetCalendarId +
+            " sourceEvents=" +
+            sourceEvents.length,
+        );
         var calendarTz = runWithBackoff(function () {
           return Calendar.Settings.get("timezone").value;
         }, RUNTIME_SETTINGS.defaultMaxRetries);
@@ -177,30 +200,59 @@ function startSync() {
         sourceEvents.forEach(function (event) {
           syncEvent(event, calendarTz, calendarContext, sessionContext);
         });
-
-        Logger.log("Done processing events");
       }
 
       //------------------------ Remove old events from calendar ------------------------
       if (CONFIG.removeEventsFromCalendar) {
         Logger.log(
-          "Checking " +
-            calendarContext.managedEvents.events.length +
-            " events for removal",
+          "Checking managed events for removal: calendar=" +
+            calendarContext.targetCalendarName +
+            " calendarId=" +
+            calendarContext.targetCalendarId +
+            " managedEvents=" +
+            calendarContext.managedEvents.events.length,
         );
         removeMissingEvents(calendarContext, sessionContext);
-        Logger.log("Done checking events for removal");
       }
 
       //------------------------ Add Recurring Event Instances ------------------------
       Logger.log(
-        "Processing " +
-          calendarContext.recurringEvents.length +
-          " Recurrence Instances!",
+        "Processing deferred recurring instances: calendar=" +
+          calendarContext.targetCalendarName +
+          " calendarId=" +
+          calendarContext.targetCalendarId +
+          " deferredInstances=" +
+          calendarContext.recurringEvents.length,
       );
       for (var recurringEvent of calendarContext.recurringEvents) {
         upsertRecurringEventInstance(recurringEvent, calendarContext);
       }
+
+      var notificationCountsAfter = getNotificationCounts(
+        sessionContext.notifications,
+      );
+      var notificationDeltas = subtractNotificationCounts(
+        notificationCountsAfter,
+        notificationCountsBefore,
+      );
+      Logger.log(
+        "Completed calendar sync: calendar=" +
+          calendarContext.targetCalendarName +
+          " calendarId=" +
+          calendarContext.targetCalendarId +
+          " sourceFeeds=" +
+          responses.length +
+          " sourceEvents=" +
+          sourceEvents.length +
+          " added=" +
+          notificationDeltas.added +
+          " modified=" +
+          notificationDeltas.modified +
+          " removed=" +
+          notificationDeltas.removed +
+          " deferredInstances=" +
+          calendarContext.recurringEvents.length,
+      );
     }
 
     var notifications = sessionContext.notifications;
@@ -214,11 +266,36 @@ function startSync() {
       sendExecutionSummary(sessionContext);
     }
 
-    Logger.log("Sync finished!");
+    Logger.log(
+      "Sync finished: targetCalendars=" +
+        sourceCalendars.length +
+        " added=" +
+        notifications.addedEvents.length +
+        " modified=" +
+        notifications.modifiedEvents.length +
+        " removed=" +
+        notifications.removedEvents.length,
+    );
     return ContentService.createTextOutput(
       JSON.stringify(notifications),
     ).setMimeType(ContentService.MimeType.JSON);
   } finally {
     lock.releaseLock();
   }
+}
+
+function getNotificationCounts(notifications) {
+  return {
+    added: notifications.addedEvents.length,
+    modified: notifications.modifiedEvents.length,
+    removed: notifications.removedEvents.length,
+  };
+}
+
+function subtractNotificationCounts(afterCounts, beforeCounts) {
+  return {
+    added: afterCounts.added - beforeCounts.added,
+    modified: afterCounts.modified - beforeCounts.modified,
+    removed: afterCounts.removed - beforeCounts.removed,
+  };
 }

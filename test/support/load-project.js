@@ -16,9 +16,10 @@ const PROJECT_FILES = [
 
 function loadProject(options = {}) {
   const projectRoot = path.resolve(__dirname, "..", "..");
+  const runtime = createAppsScriptRuntime(options);
   const context = {
-    ...createAppsScriptRuntime(options),
-    console,
+    ...runtime,
+    console: runtime.console || console,
     Math,
     JSON,
     Date,

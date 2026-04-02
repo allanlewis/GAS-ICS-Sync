@@ -89,7 +89,10 @@ function fetchSourceCalendars(sourceCalendarURLs) {
           urlResponse.getContentText(),
         );
         if (urlContent == null) {
-          Logger.log("[ERROR] Incorrect ics/ical URL: " + url);
+          Logger.log(
+            "[ERROR] Feed response did not contain a valid VCALENDAR payload: url=" +
+              url,
+          );
           return;
         } else {
           result.push([urlContent[0], colorId]);
@@ -131,7 +134,7 @@ function getOrCreateTargetCalendar(targetCalendarName) {
   })[0];
 
   if (targetCalendar == null) {
-    Logger.log("Creating Calendar: " + targetCalendarName);
+    Logger.log("Creating target calendar: calendar=" + targetCalendarName);
     targetCalendar = Calendar.newCalendar();
     targetCalendar.summary = targetCalendarName;
     targetCalendar.description = "Created by GAS";
@@ -278,7 +281,16 @@ function syncEvent(event, calendarTz, calendarContext, sessionContext) {
   //------------------------ Save instance overrides ------------------------
   //----------- To make sure the parent event is actually created -----------
   if (event.hasProperty("recurrence-id")) {
-    Logger.log("Saving event instance for later: " + newEvent.recurringEventId);
+    Logger.log(
+      "Deferring recurrence override until parent event exists: calendar=" +
+        calendarContext.targetCalendarName +
+        " eventId=" +
+        newEvent.extendedProperties.private["rec-id"] +
+        " summary=" +
+        getEventSummaryForLog(newEvent) +
+        " start=" +
+        getEventStartForLog(newEvent),
+    );
     calendarContext.recurringEvents.push(newEvent);
     return;
   } else {
@@ -286,8 +298,14 @@ function syncEvent(event, calendarTz, calendarContext, sessionContext) {
     if (needsUpdate) {
       if (CONFIG.modifyExistingEvents) {
         Logger.log(
-          "Updating existing event " +
-            newEvent.extendedProperties.private["id"],
+          "Updating managed event: calendar=" +
+            calendarContext.targetCalendarName +
+            " eventId=" +
+            newEvent.extendedProperties.private["id"] +
+            " summary=" +
+            getEventSummaryForLog(newEvent) +
+            " start=" +
+            getEventStartForLog(newEvent),
         );
         newEvent = runWithBackoff(function () {
           return Calendar.Events.update(
@@ -307,7 +325,14 @@ function syncEvent(event, calendarTz, calendarContext, sessionContext) {
     } else {
       if (CONFIG.addEventsToCalendar) {
         Logger.log(
-          "Adding new event " + newEvent.extendedProperties.private["id"],
+          "Adding managed event: calendar=" +
+            calendarContext.targetCalendarName +
+            " eventId=" +
+            newEvent.extendedProperties.private["id"] +
+            " summary=" +
+            getEventSummaryForLog(newEvent) +
+            " start=" +
+            getEventStartForLog(newEvent),
         );
         newEvent = runWithBackoff(function () {
           return Calendar.Events.insert(
@@ -389,10 +414,7 @@ function buildCalendarEvent(
       }
 
       Logger.log(
-        "Converting ICS timezone " +
-          oldTzid +
-          " to Google Calendar (IANA) timezone " +
-          tzid,
+        "Converting ICS timezone: sourceTz=" + oldTzid + " targetTz=" + tzid,
       );
     }
 
@@ -599,7 +621,10 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
       icalEvent.startDate.compare(sessionContext.startUpdateTime) < 0 &&
       icalEvent.recurrenceId.compare(sessionContext.startUpdateTime) < 0
     ) {
-      Logger.log("Skipping past recurrence exception");
+      Logger.log(
+        "Skipping past recurrence exception: recurrenceId=" +
+          icalEvent.recurrenceId.toString(),
+      );
       return true;
     }
   } else if (icalEvent.isRecurring()) {
@@ -669,7 +694,10 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
             r.setValues(vals);
           }
         });
-        Logger.log("Adjusted RRule/RDate to exclude past instances");
+        Logger.log(
+          "Adjusted recurrence rule to exclude past instances: uid=" +
+            event.getFirstPropertyValue("uid").toString(),
+        );
       } else {
         //All instances are in the past
         skip = true;
@@ -687,7 +715,7 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
         ) >= 0
       ) {
         Logger.log(
-          "Creating EXDATE for exception at " +
+          "Creating EXDATE for recurrence exception: recurrenceId=" +
             icalEvent.except[i].recurrenceId.toString(),
         );
         icalEvent.component.addPropertyWithValue(
@@ -703,7 +731,7 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
         ) < 0
       ) {
         Logger.log(
-          "Creating RDATE for exception at " +
+          "Creating RDATE for recurrence exception: recurrenceId=" +
             icalEvent.except[i].recurrenceId.toString(),
         );
         icalEvent.component.addPropertyWithValue(
@@ -723,7 +751,7 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
         1,
       );
       Logger.log(
-        "Skipping past recurring event " +
+        "Skipping past recurring event: uid=" +
           event.getFirstPropertyValue("uid").toString(),
       );
       return true;
@@ -738,7 +766,7 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
         1,
       );
       Logger.log(
-        "Skipping previous event " +
+        "Skipping past event: uid=" +
           event.getFirstPropertyValue("uid").toString(),
       );
       return true;
@@ -755,10 +783,14 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
  */
 function upsertRecurringEventInstance(recEvent, calendarContext) {
   Logger.log(
-    "ID: " +
+    "Processing recurring instance: eventId=" +
       recEvent.extendedProperties.private["id"] +
-      " | Date: " +
-      recEvent.recurringEventId,
+      " recurrenceId=" +
+      recEvent.recurringEventId +
+      " summary=" +
+      getEventSummaryForLog(recEvent) +
+      " start=" +
+      getEventStartForLog(recEvent),
   );
 
   var eventInstanceToPatch = findRecurringEventInstance(
@@ -779,7 +811,14 @@ function upsertRecurringEventInstance(recEvent, calendarContext) {
   }
 
   if (eventInstanceToPatch !== null && eventInstanceToPatch.length == 1) {
-    Logger.log("Updating existing event instance");
+    Logger.log(
+      "Updating recurring instance: eventId=" +
+        recEvent.extendedProperties.private["id"] +
+        " recurrenceId=" +
+        recEvent.recurringEventId +
+        " matchedEventId=" +
+        eventInstanceToPatch[0].id,
+    );
     runWithBackoff(function () {
       Calendar.Events.update(
         recEvent,
@@ -788,7 +827,12 @@ function upsertRecurringEventInstance(recEvent, calendarContext) {
       );
     }, RUNTIME_SETTINGS.defaultMaxRetries);
   } else {
-    Logger.log("No Instance matched, adding as new event!");
+    Logger.log(
+      "[WARN] No managed recurring instance matched; inserting new event: eventId=" +
+        recEvent.extendedProperties.private["id"] +
+        " recurrenceId=" +
+        recEvent.recurringEventId,
+    );
     runWithBackoff(function () {
       Calendar.Events.insert(recEvent, calendarContext.targetCalendarId);
     }, RUNTIME_SETTINGS.defaultMaxRetries);
@@ -857,7 +901,12 @@ function removeMissingEvents(calendarContext, sessionContext) {
     },
   );
   if (toDelete.length >= 1000) {
-    Logger.log(`Refusing to delete ${toDelete.length} events!`);
+    Logger.log(
+      "[WARN] Refusing to delete managed events because threshold was reached: count=" +
+        toDelete.length +
+        " calendar=" +
+        calendarContext.targetCalendarName,
+    );
     return;
   }
   for (var i = 0; i < toDelete.length; i++) {
@@ -866,7 +915,16 @@ function removeMissingEvents(calendarContext, sessionContext) {
       currentEvent.extendedProperties.private["rec-id"] ||
       currentEvent.extendedProperties.private["id"];
 
-    Logger.log("Deleting old event " + currentID);
+    Logger.log(
+      "Deleting managed event: calendar=" +
+        calendarContext.targetCalendarName +
+        " eventId=" +
+        currentID +
+        " summary=" +
+        getEventSummaryForLog(currentEvent) +
+        " start=" +
+        getEventStartForLog(currentEvent),
+    );
     runWithBackoff(function () {
       Calendar.Events.remove(calendarContext.targetCalendarId, currentEvent.id);
     }, RUNTIME_SETTINGS.defaultMaxRetries);
@@ -1043,29 +1101,19 @@ function parseNotificationTime(notificationString) {
  * Sends an execution summary email covering added, modified, and removed events.
  */
 function sendExecutionSummary(sessionContext) {
-  var body;
   var addedEvents = sessionContext.notifications.addedEvents.slice();
   var modifiedEvents = sessionContext.notifications.modifiedEvents.slice();
   var removedEvents = sessionContext.notifications.removedEvents.slice();
-
-  Logger.log("Added events: %s", addedEvents);
-  Logger.log("Modified events: %s", modifiedEvents);
-  Logger.log("Removed events: %s", removedEvents);
 
   var subject = `GAS-ICS-Sync Execution Summary: ${addedEvents.length} new, ${modifiedEvents.length} modified, ${removedEvents.length} deleted`;
   addedEvents = condenseCalendarMap(addedEvents);
   modifiedEvents = condenseCalendarMap(modifiedEvents);
   removedEvents = condenseCalendarMap(removedEvents);
 
-  Logger.log("Added events (condensed): %s", addedEvents);
-  Logger.log("Modified events (condensed): %s", modifiedEvents);
-  Logger.log("Removed events (condensed): %s", removedEvents);
-
-  body = "GAS-ICS-Sync made the following changes to your calendar:<br/>";
+  var body = "GAS-ICS-Sync made the following changes to your calendar:<br/>";
   for (var targetCalendar of addedEvents) {
     body += `<br/>${targetCalendar[0]}: ${targetCalendar[1].length} added events<br/><ul>`;
     for (var eventChange of targetCalendar[1]) {
-      Logger.log("Added event: %s", eventChange);
       body += "<li>" + eventChange[0][0] + " at " + eventChange[0][1] + "</li>";
     }
     body += "</ul>";
@@ -1074,7 +1122,6 @@ function sendExecutionSummary(sessionContext) {
   for (var targetCalendar of modifiedEvents) {
     body += `<br/>${targetCalendar[0]}: ${targetCalendar[1].length} modified events<br/><ul>`;
     for (var eventChange of targetCalendar[1]) {
-      Logger.log("Modified event: %s", eventChange);
       body += "<li>" + eventChange[0][0] + " at " + eventChange[0][1] + "</li>";
     }
     body += "</ul>";
@@ -1083,7 +1130,6 @@ function sendExecutionSummary(sessionContext) {
   for (var targetCalendar of removedEvents) {
     body += `<br/>${targetCalendar[0]}: ${targetCalendar[1].length} removed events<br/><ul>`;
     for (var eventChange of targetCalendar[1]) {
-      Logger.log("Removed event: %s", eventChange);
       body += "<li>" + eventChange[0][0] + " at " + eventChange[0][1] + "</li>";
     }
     body += "</ul>";
@@ -1098,8 +1144,14 @@ function sendExecutionSummary(sessionContext) {
     name: "GAS-ICS-Sync",
   };
 
-  Logger.log("Sending email:");
-  Logger.log(message);
+  Logger.log(
+    "Sending execution summary email: added=" +
+      sessionContext.notifications.addedEvents.length +
+      " modified=" +
+      sessionContext.notifications.modifiedEvents.length +
+      " removed=" +
+      sessionContext.notifications.removedEvents.length,
+  );
   MailApp.sendEmail(message);
 }
 
@@ -1127,7 +1179,7 @@ function runWithBackoff(func, maxRetries) {
     } catch (err) {
       err = err.message || err;
       if (err.includes("HTTP error")) {
-        Logger.log(err);
+        Logger.log("[ERROR] HTTP request failed: " + err);
         return null;
       } else if (
         err.includes("is not a function") ||
@@ -1138,11 +1190,18 @@ function runWithBackoff(func, maxRetries) {
         throw err;
       } else if (tries > maxRetries) {
         Logger.log(
-          `Error, giving up after trying ${maxRetries} times [${err}]`,
+          "[ERROR] Exhausted retries after " + maxRetries + " attempts: " + err,
         );
         return null;
       } else {
-        Logger.log("Error, Retrying... [" + err + "]");
+        Logger.log(
+          "[WARN] Retrying after recoverable error: attempt=" +
+            tries +
+            " maxRetries=" +
+            maxRetries +
+            " error=" +
+            err,
+        );
         Utilities.sleep(
           Math.pow(2, tries) * 100 + Math.round(Math.random() * 100),
         );
@@ -1150,4 +1209,16 @@ function runWithBackoff(func, maxRetries) {
     }
   }
   return null;
+}
+
+function getEventSummaryForLog(event) {
+  return event.summary || "(no summary)";
+}
+
+function getEventStartForLog(event) {
+  if (event.start == null) {
+    return "(no start)";
+  }
+
+  return event.start.date || event.start.dateTime || "(no start)";
 }

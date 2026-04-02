@@ -14,6 +14,9 @@ test("startSync returns a text response when another run already holds the lock"
   assert.equal(response.content, "Another iteration is currently running!");
   assert.equal(response.mimeType, context.ContentService.MimeType.TEXT);
   assert.equal(lock.released, false);
+  assert.deepEqual(context.__logEntries.logger, [
+    ["[WARN] Sync skipped: another iteration is already running."],
+  ]);
 });
 
 test("startSync orchestrates one calendar sync and releases the lock", () => {
@@ -35,12 +38,7 @@ test("startSync orchestrates one calendar sync and releases the lock", () => {
   context.Calendar.Events.list = () => ({ items: [] });
   context.Calendar.Settings.get = () => ({ value: "UTC" });
   context.parseSourceEvents = () => ["event-1", "event-2"];
-  context.syncEvent = (
-    event,
-    calendarTz,
-    calendarContext,
-    sessionContext,
-  ) => {
+  context.syncEvent = (event, calendarTz, calendarContext, sessionContext) => {
     assert.equal(calendarTz, "UTC");
     context.recordSyncChange(
       sessionContext.notifications.addedEvents,
@@ -62,4 +60,15 @@ test("startSync orchestrates one calendar sync and releases the lock", () => {
   assert.equal(payload.addedEvents.length, 2);
   assert.equal(summarySent, 1);
   assert.equal(lock.released, true);
+  assert.deepEqual(context.__logEntries.logger, [
+    ["Starting sync: targetCalendars=1"],
+    ["Fetched source feeds: calendar=Work sourceFeeds=1"],
+    ["Resolved target calendar: calendar=Work calendarId=calendar-1"],
+    ["Fetched managed events: calendar=Work calendarId=calendar-1 managedEvents=0"],
+    ["Parsed source events: calendar=Work calendarId=calendar-1 sourceEvents=2"],
+    ["Syncing events: calendar=Work calendarId=calendar-1 sourceEvents=2"],
+    ["Processing deferred recurring instances: calendar=Work calendarId=calendar-1 deferredInstances=0"],
+    ["Completed calendar sync: calendar=Work calendarId=calendar-1 sourceFeeds=1 sourceEvents=2 added=2 modified=0 removed=0 deferredInstances=0"],
+    ["Sync finished: targetCalendars=1 added=2 modified=0 removed=0"],
+  ]);
 });
