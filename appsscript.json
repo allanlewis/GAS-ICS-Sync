@@ -1,5 +1,5 @@
 {
-  "timeZone": "Etc/GMT",
+  "timeZone": "Europe/London",
   "dependencies": {
     "enabledAdvancedServices": [
       {
@@ -14,13 +14,10 @@
       }
     ]
   },
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/script.scriptapp",
-    "https://www.googleapis.com/auth/tasks",
-    "https://www.googleapis.com/auth/script.send_mail",
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/script.external_request"
-  ],
   "exceptionLogging": "STACKDRIVER",
-  "runtimeVersion": "V8"
+  "runtimeVersion": "V8",
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "MYSELF"
+  }
 }

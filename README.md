@@ -3,6 +3,7 @@
 Sync one or more ICS/iCal feeds to Google Calendar from Google Apps Script.
 
 The script can:
+
 - create events from source calendars
 - update changed events
 - remove events that disappear from the feed
@@ -26,10 +27,10 @@ The main settings live in `Code.gs`:
 
 - `sourceCalendars`: map each ICS URL to a target Google Calendar name
 - `howFrequent`: sync interval in minutes
+- `onlyFutureEvents`: sync only future events and clean up past recurring instances during cleanup
 - `addEventsToCalendar`: create new events from the feed
 - `modifyExistingEvents`: update existing synced events when the feed changes
 - `removeEventsFromCalendar`: delete synced events that no longer exist in the feed
-- `removePastEventsFromCalendar`: keep past events even if they disappear from the feed
 - `addAlerts`: control whether ICS alarms become Google Calendar reminders
 - `addOrganizerToTitle`: prefix event titles with the organizer name
 - `descriptionAsTitles`: use descriptions instead of summaries as titles
