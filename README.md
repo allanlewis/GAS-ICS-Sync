@@ -62,6 +62,7 @@ The code supports simple string matches, regex matches, and date-based cutoffs. 
 ## Notes
 
 - This repository is the source for the Apps Script project; there is no build step.
+- Application logging is centralized in `logging.gs`; prefer the `logInfo`, `logWarn`, `logError`, and `logDebug` helpers for human-readable output, and `logStructuredInfo` when you also want a structured `Logger.log` entry.
 - `ical.js.gs` is a vendored copy of `ical.js`, and `tzid.gs` is vendored/generated timezone data. Refresh those files from their upstream sources instead of editing application logic into them.
 - Google can still rate-limit access to the source feed if many users request the same URL at once.
 - Transient errors such as rate limits are retried with exponential backoff and a small random jitter.

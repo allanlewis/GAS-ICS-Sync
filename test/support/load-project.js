@@ -8,6 +8,7 @@ const PROJECT_FILES = [
   "ical.js.gs",
   "tzid.gs",
   "config.gs",
+  "logging.gs",
   "filters.gs",
   "sync-context.gs",
   "sync-helpers.gs",

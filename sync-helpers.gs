@@ -8,7 +8,10 @@
  */
 function getValidTriggerFrequency(requestedFrequency) {
   if (!requestedFrequency > 0) {
-    Logger.log("No valid frequency specified. Defaulting to 15 minutes.");
+    logWarn("config", "No valid frequency specified; defaulting to 15", {
+      requestedFrequency: requestedFrequency,
+      validFrequency: 15,
+    });
     return 15;
   }
 
@@ -22,12 +25,10 @@ function getValidTriggerFrequency(requestedFrequency) {
   )
     validFrequency = 30; // If we adjusted to 15, but the original number is actually closer to 30, set it to 30 instead
 
-  Logger.log(
-    "Intended frequency = " +
-      requestedFrequency +
-      ", Adjusted frequency = " +
-      validFrequency,
-  );
+  logInfo("config", "Adjusted trigger frequency", {
+    requestedFrequency: requestedFrequency,
+    validFrequency: validFrequency,
+  });
   return validFrequency;
 }
 
@@ -79,37 +80,48 @@ function fetchSourceCalendars(sourceCalendarURLs) {
     var url = source[0].replace("webcal://", "https://");
     var colorId = source[1];
 
-    runWithBackoff(function () {
-      var urlResponse = UrlFetchApp.fetch(url, {
-        validateHttpsCertificates: false,
-        muteHttpExceptions: true,
-      });
-      if (urlResponse.getResponseCode() == 200) {
-        var urlContent = RegExp("(BEGIN:VCALENDAR.*?END:VCALENDAR)", "s").exec(
-          urlResponse.getContentText(),
-        );
-        if (urlContent == null) {
-          Logger.log(
-            "[ERROR] Feed response did not contain a valid VCALENDAR payload: url=" +
-              url,
-          );
-          return;
+    runWithBackoff(
+      function () {
+        var urlResponse = UrlFetchApp.fetch(url, {
+          validateHttpsCertificates: false,
+          muteHttpExceptions: true,
+        });
+        if (urlResponse.getResponseCode() == 200) {
+          var urlContent = RegExp(
+            "(BEGIN:VCALENDAR.*?END:VCALENDAR)",
+            "s",
+          ).exec(urlResponse.getContentText());
+          if (urlContent == null) {
+            logError(
+              "fetch",
+              "Feed response did not contain a valid VCALENDAR payload",
+              {
+                url: url,
+              },
+            );
+            return;
+          } else {
+            result.push([urlContent[0], colorId]);
+            return;
+          }
         } else {
-          result.push([urlContent[0], colorId]);
-          return;
+          // Throw here to make runWithBackoff retry the request.
+          throw (
+            "Error: Encountered HTTP error " +
+            urlResponse.getResponseCode() +
+            " when accessing " +
+            url +
+            ": " +
+            urlResponse.getContentText()
+          );
         }
-      } else {
-        // Throw here to make runWithBackoff retry the request.
-        throw (
-          "Error: Encountered HTTP error " +
-          urlResponse.getResponseCode() +
-          " when accessing " +
-          url +
-          ": " +
-          urlResponse.getContentText()
-        );
-      }
-    }, RUNTIME_SETTINGS.defaultMaxRetries);
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "UrlFetchApp.fetch",
+      {
+        url: url,
+      },
+    );
   }
 
   return result;
@@ -134,12 +146,33 @@ function getOrCreateTargetCalendar(targetCalendarName) {
   })[0];
 
   if (targetCalendar == null) {
-    Logger.log("Creating target calendar: calendar=" + targetCalendarName);
+    logInfo("sync", "Creating target calendar", {
+      calendar: targetCalendarName,
+    });
     targetCalendar = Calendar.newCalendar();
     targetCalendar.summary = targetCalendarName;
     targetCalendar.description = "Created by GAS";
-    targetCalendar.timeZone = Calendar.Settings.get("timezone").value;
-    targetCalendar = Calendar.Calendars.insert(targetCalendar);
+    targetCalendar.timeZone = runWithBackoff(
+      function () {
+        return Calendar.Settings.get("timezone").value;
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.Settings.get",
+      {
+        setting: "timezone",
+        calendar: targetCalendarName,
+      },
+    );
+    targetCalendar = runWithBackoff(
+      function () {
+        return Calendar.Calendars.insert(targetCalendar);
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.Calendars.insert",
+      {
+        calendar: targetCalendarName,
+      },
+    );
   }
 
   return targetCalendar;
@@ -281,39 +314,42 @@ function syncEvent(event, calendarTz, calendarContext, sessionContext) {
   //------------------------ Save instance overrides ------------------------
   //----------- To make sure the parent event is actually created -----------
   if (event.hasProperty("recurrence-id")) {
-    Logger.log(
-      "Deferring recurrence override until parent event exists: calendar=" +
-        calendarContext.targetCalendarName +
-        " eventId=" +
-        newEvent.extendedProperties.private["rec-id"] +
-        " summary=" +
-        getEventSummaryForLog(newEvent) +
-        " start=" +
-        getEventStartForLog(newEvent),
-    );
+    logInfo("recurrence", "Deferring recurrence override until parent exists", {
+      calendar: calendarContext.targetCalendarName,
+      eventId: newEvent.extendedProperties.private["rec-id"],
+      summary: getEventSummaryForLog(newEvent),
+      start: getEventStartForLog(newEvent),
+    });
     calendarContext.recurringEvents.push(newEvent);
     return;
   } else {
     //------------------------ Send event object to gcal ------------------------
     if (needsUpdate) {
       if (CONFIG.modifyExistingEvents) {
-        Logger.log(
-          "Updating managed event: calendar=" +
-            calendarContext.targetCalendarName +
-            " eventId=" +
-            newEvent.extendedProperties.private["id"] +
-            " summary=" +
-            getEventSummaryForLog(newEvent) +
-            " start=" +
-            getEventStartForLog(newEvent),
+        logInfo("event", "Updating managed event", {
+          calendar: calendarContext.targetCalendarName,
+          calendarId: calendarContext.targetCalendarId,
+          eventId: newEvent.extendedProperties.private["id"],
+          summary: getEventSummaryForLog(newEvent),
+          start: getEventStartForLog(newEvent),
+        });
+        newEvent = runWithBackoff(
+          function () {
+            return Calendar.Events.update(
+              newEvent,
+              calendarContext.targetCalendarId,
+              existingEvent.id,
+            );
+          },
+          RUNTIME_SETTINGS.defaultMaxRetries,
+          "Calendar.Events.update",
+          {
+            calendar: calendarContext.targetCalendarName,
+            calendarId: calendarContext.targetCalendarId,
+            eventId: newEvent.extendedProperties.private["id"],
+            managedEventId: existingEvent.id,
+          },
         );
-        newEvent = runWithBackoff(function () {
-          return Calendar.Events.update(
-            newEvent,
-            calendarContext.targetCalendarId,
-            existingEvent.id,
-          );
-        }, RUNTIME_SETTINGS.defaultMaxRetries);
         if (newEvent != null && shouldSendEmailSummary()) {
           recordSyncChange(
             sessionContext.notifications.modifiedEvents,
@@ -324,22 +360,28 @@ function syncEvent(event, calendarTz, calendarContext, sessionContext) {
       }
     } else {
       if (CONFIG.addEventsToCalendar) {
-        Logger.log(
-          "Adding managed event: calendar=" +
-            calendarContext.targetCalendarName +
-            " eventId=" +
-            newEvent.extendedProperties.private["id"] +
-            " summary=" +
-            getEventSummaryForLog(newEvent) +
-            " start=" +
-            getEventStartForLog(newEvent),
+        logInfo("event", "Adding managed event", {
+          calendar: calendarContext.targetCalendarName,
+          calendarId: calendarContext.targetCalendarId,
+          eventId: newEvent.extendedProperties.private["id"],
+          summary: getEventSummaryForLog(newEvent),
+          start: getEventStartForLog(newEvent),
+        });
+        newEvent = runWithBackoff(
+          function () {
+            return Calendar.Events.insert(
+              newEvent,
+              calendarContext.targetCalendarId,
+            );
+          },
+          RUNTIME_SETTINGS.defaultMaxRetries,
+          "Calendar.Events.insert",
+          {
+            calendar: calendarContext.targetCalendarName,
+            calendarId: calendarContext.targetCalendarId,
+            eventId: newEvent.extendedProperties.private["id"],
+          },
         );
-        newEvent = runWithBackoff(function () {
-          return Calendar.Events.insert(
-            newEvent,
-            calendarContext.targetCalendarId,
-          );
-        }, RUNTIME_SETTINGS.defaultMaxRetries);
         if (newEvent != null && shouldSendEmailSummary()) {
           recordSyncChange(
             sessionContext.notifications.addedEvents,
@@ -387,9 +429,13 @@ function buildCalendarEvent(
     return;
   }
 
-  var newEvent = runWithBackoff(function () {
-    return Calendar.newEvent();
-  }, RUNTIME_SETTINGS.defaultMaxRetries);
+  var newEvent = runWithBackoff(
+    function () {
+      return Calendar.newEvent();
+    },
+    RUNTIME_SETTINGS.defaultMaxRetries,
+    "Calendar.newEvent",
+  );
   if (icalEvent.startDate.isDate) {
     //All-day event
     if (icalEvent.startDate.compare(icalEvent.endDate) == 0) {
@@ -413,9 +459,10 @@ function buildCalendarEvent(
         tzid = calendarTz;
       }
 
-      Logger.log(
-        "Converting ICS timezone: sourceTz=" + oldTzid + " targetTz=" + tzid,
-      );
+      logInfo("event", "Converting ICS timezone", {
+        sourceTz: oldTzid,
+        targetTz: tzid,
+      });
     }
 
     newEvent = {
@@ -459,9 +506,13 @@ function buildCalendarEvent(
     event.hasProperty("url") &&
     event.getFirstPropertyValue("url").toString().substring(0, 4) == "http"
   ) {
-    newEvent.source = runWithBackoff(function () {
-      return Calendar.newEventSource();
-    }, RUNTIME_SETTINGS.defaultMaxRetries);
+    newEvent.source = runWithBackoff(
+      function () {
+        return Calendar.newEventSource();
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.newEventSource",
+    );
     newEvent.source.url = event.getFirstPropertyValue("url").toString();
     newEvent.source.title = "link";
   }
@@ -621,10 +672,9 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
       icalEvent.startDate.compare(sessionContext.startUpdateTime) < 0 &&
       icalEvent.recurrenceId.compare(sessionContext.startUpdateTime) < 0
     ) {
-      Logger.log(
-        "Skipping past recurrence exception: recurrenceId=" +
-          icalEvent.recurrenceId.toString(),
-      );
+      logInfo("recurrence", "Skipping past recurrence exception", {
+        recurrenceId: icalEvent.recurrenceId.toString(),
+      });
       return true;
     }
   } else if (icalEvent.isRecurring()) {
@@ -694,9 +744,12 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
             r.setValues(vals);
           }
         });
-        Logger.log(
-          "Adjusted recurrence rule to exclude past instances: uid=" +
-            event.getFirstPropertyValue("uid").toString(),
+        logInfo(
+          "recurrence",
+          "Adjusted recurrence rule to exclude past instances",
+          {
+            uid: event.getFirstPropertyValue("uid").toString(),
+          },
         );
       } else {
         //All instances are in the past
@@ -714,10 +767,9 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
           sessionContext.startUpdateTime,
         ) >= 0
       ) {
-        Logger.log(
-          "Creating EXDATE for recurrence exception: recurrenceId=" +
-            icalEvent.except[i].recurrenceId.toString(),
-        );
+        logInfo("recurrence", "Creating EXDATE for recurrence exception", {
+          recurrenceId: icalEvent.except[i].recurrenceId.toString(),
+        });
         icalEvent.component.addPropertyWithValue(
           "exdate",
           icalEvent.except[i].recurrenceId.toString(),
@@ -730,10 +782,9 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
           sessionContext.startUpdateTime,
         ) < 0
       ) {
-        Logger.log(
-          "Creating RDATE for recurrence exception: recurrenceId=" +
-            icalEvent.except[i].recurrenceId.toString(),
-        );
+        logInfo("recurrence", "Creating RDATE for recurrence exception", {
+          recurrenceId: icalEvent.except[i].recurrenceId.toString(),
+        });
         icalEvent.component.addPropertyWithValue(
           "rdate",
           icalEvent.except[i].recurrenceId.toString(),
@@ -750,10 +801,9 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
         ),
         1,
       );
-      Logger.log(
-        "Skipping past recurring event: uid=" +
-          event.getFirstPropertyValue("uid").toString(),
-      );
+      logInfo("event", "Skipping past recurring event", {
+        uid: event.getFirstPropertyValue("uid").toString(),
+      });
       return true;
     }
   } else {
@@ -765,10 +815,9 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
         ),
         1,
       );
-      Logger.log(
-        "Skipping past event: uid=" +
-          event.getFirstPropertyValue("uid").toString(),
-      );
+      logInfo("event", "Skipping past event", {
+        uid: event.getFirstPropertyValue("uid").toString(),
+      });
       return true;
     }
   }
@@ -782,16 +831,12 @@ function shouldSkipEvent(event, icalEvent, calendarContext, sessionContext) {
  * @param {Calendar.Event} recEvent - The event instance to process
  */
 function upsertRecurringEventInstance(recEvent, calendarContext) {
-  Logger.log(
-    "Processing recurring instance: eventId=" +
-      recEvent.extendedProperties.private["id"] +
-      " recurrenceId=" +
-      recEvent.recurringEventId +
-      " summary=" +
-      getEventSummaryForLog(recEvent) +
-      " start=" +
-      getEventStartForLog(recEvent),
-  );
+  logInfo("recurrence", "Processing recurring instance", {
+    eventId: recEvent.extendedProperties.private["id"],
+    recurrenceId: recEvent.recurringEventId,
+    summary: getEventSummaryForLog(recEvent),
+    start: getEventStartForLog(recEvent),
+  });
 
   var eventInstanceToPatch = findRecurringEventInstance(
     calendarContext.targetCalendarId,
@@ -811,45 +856,75 @@ function upsertRecurringEventInstance(recEvent, calendarContext) {
   }
 
   if (eventInstanceToPatch !== null && eventInstanceToPatch.length == 1) {
-    Logger.log(
-      "Updating recurring instance: eventId=" +
-        recEvent.extendedProperties.private["id"] +
-        " recurrenceId=" +
-        recEvent.recurringEventId +
-        " matchedEventId=" +
-        eventInstanceToPatch[0].id,
+    logInfo("recurrence", "Updating recurring instance", {
+      calendarId: calendarContext.targetCalendarId,
+      eventId: recEvent.extendedProperties.private["id"],
+      recurrenceId: recEvent.recurringEventId,
+      matchedEventId: eventInstanceToPatch[0].id,
+    });
+    runWithBackoff(
+      function () {
+        Calendar.Events.update(
+          recEvent,
+          calendarContext.targetCalendarId,
+          eventInstanceToPatch[0].id,
+        );
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.Events.update",
+      {
+        calendarId: calendarContext.targetCalendarId,
+        eventId: recEvent.extendedProperties.private["id"],
+        managedEventId: eventInstanceToPatch[0].id,
+        recurrenceId: recEvent.recurringEventId,
+      },
     );
-    runWithBackoff(function () {
-      Calendar.Events.update(
-        recEvent,
-        calendarContext.targetCalendarId,
-        eventInstanceToPatch[0].id,
-      );
-    }, RUNTIME_SETTINGS.defaultMaxRetries);
   } else {
-    Logger.log(
-      "[WARN] No managed recurring instance matched; inserting new event: eventId=" +
-        recEvent.extendedProperties.private["id"] +
-        " recurrenceId=" +
-        recEvent.recurringEventId,
+    logWarn(
+      "recurrence",
+      "No managed recurring instance matched; inserting new event",
+      {
+        calendarId: calendarContext.targetCalendarId,
+        eventId: recEvent.extendedProperties.private["id"],
+        recurrenceId: recEvent.recurringEventId,
+      },
     );
-    runWithBackoff(function () {
-      Calendar.Events.insert(recEvent, calendarContext.targetCalendarId);
-    }, RUNTIME_SETTINGS.defaultMaxRetries);
+    runWithBackoff(
+      function () {
+        Calendar.Events.insert(recEvent, calendarContext.targetCalendarId);
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.Events.insert",
+      {
+        calendarId: calendarContext.targetCalendarId,
+        eventId: recEvent.extendedProperties.private["id"],
+        recurrenceId: recEvent.recurringEventId,
+      },
+    );
   }
 }
 
 function findRecurringEventInstance(targetCalendarId, recEvent) {
-  var matchingItems = runWithBackoff(function () {
-    return Calendar.Events.list(targetCalendarId, {
-      singleEvents: true,
-      privateExtendedProperty:
-        "rec-id=" +
-        recEvent.extendedProperties.private["id"] +
-        "_" +
-        recEvent.recurringEventId,
-    }).items;
-  }, RUNTIME_SETTINGS.defaultMaxRetries);
+  var matchingItems = runWithBackoff(
+    function () {
+      return Calendar.Events.list(targetCalendarId, {
+        singleEvents: true,
+        privateExtendedProperty:
+          "rec-id=" +
+          recEvent.extendedProperties.private["id"] +
+          "_" +
+          recEvent.recurringEventId,
+      }).items;
+    },
+    RUNTIME_SETTINGS.defaultMaxRetries,
+    "Calendar.Events.list",
+    {
+      calendarId: targetCalendarId,
+      eventId: recEvent.extendedProperties.private["id"],
+      recurrenceId: recEvent.recurringEventId,
+      lookup: "managed-recurring-instance",
+    },
+  );
   matchingItems = filterManagedEvents(matchingItems);
 
   if (matchingItems.length > 0) {
@@ -857,16 +932,26 @@ function findRecurringEventInstance(targetCalendarId, recEvent) {
   }
 
   return filterManagedEvents(
-    runWithBackoff(function () {
-      return Calendar.Events.list(targetCalendarId, {
-        singleEvents: true,
-        orderBy: "startTime",
-        maxResults: 1,
-        timeMin: recEvent.recurringEventId,
-        privateExtendedProperty:
-          "id=" + recEvent.extendedProperties.private["id"],
-      }).items;
-    }, RUNTIME_SETTINGS.defaultMaxRetries),
+    runWithBackoff(
+      function () {
+        return Calendar.Events.list(targetCalendarId, {
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 1,
+          timeMin: recEvent.recurringEventId,
+          privateExtendedProperty:
+            "id=" + recEvent.extendedProperties.private["id"],
+        }).items;
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.Events.list",
+      {
+        calendarId: targetCalendarId,
+        eventId: recEvent.extendedProperties.private["id"],
+        recurrenceId: recEvent.recurringEventId,
+        lookup: "fallback-parent-id",
+      },
+    ),
   );
 }
 
@@ -901,11 +986,14 @@ function removeMissingEvents(calendarContext, sessionContext) {
     },
   );
   if (toDelete.length >= 1000) {
-    Logger.log(
-      "[WARN] Refusing to delete managed events because threshold was reached: count=" +
-        toDelete.length +
-        " calendar=" +
-        calendarContext.targetCalendarName,
+    logWarn(
+      "cleanup",
+      "Refusing to delete managed events because threshold was reached",
+      {
+        count: toDelete.length,
+        calendar: calendarContext.targetCalendarName,
+        calendarId: calendarContext.targetCalendarId,
+      },
     );
     return;
   }
@@ -915,19 +1003,29 @@ function removeMissingEvents(calendarContext, sessionContext) {
       currentEvent.extendedProperties.private["rec-id"] ||
       currentEvent.extendedProperties.private["id"];
 
-    Logger.log(
-      "Deleting managed event: calendar=" +
-        calendarContext.targetCalendarName +
-        " eventId=" +
-        currentID +
-        " summary=" +
-        getEventSummaryForLog(currentEvent) +
-        " start=" +
-        getEventStartForLog(currentEvent),
+    logInfo("cleanup", "Deleting managed event", {
+      calendar: calendarContext.targetCalendarName,
+      calendarId: calendarContext.targetCalendarId,
+      eventId: currentID,
+      summary: getEventSummaryForLog(currentEvent),
+      start: getEventStartForLog(currentEvent),
+    });
+    runWithBackoff(
+      function () {
+        Calendar.Events.remove(
+          calendarContext.targetCalendarId,
+          currentEvent.id,
+        );
+      },
+      RUNTIME_SETTINGS.defaultMaxRetries,
+      "Calendar.Events.remove",
+      {
+        calendar: calendarContext.targetCalendarName,
+        calendarId: calendarContext.targetCalendarId,
+        eventId: currentID,
+        managedEventId: currentEvent.id,
+      },
     );
-    runWithBackoff(function () {
-      Calendar.Events.remove(calendarContext.targetCalendarId, currentEvent.id);
-    }, RUNTIME_SETTINGS.defaultMaxRetries);
 
     if (shouldSendEmailSummary()) {
       recordSyncChange(
@@ -1144,14 +1242,11 @@ function sendExecutionSummary(sessionContext) {
     name: "GAS-ICS-Sync",
   };
 
-  Logger.log(
-    "Sending execution summary email: added=" +
-      sessionContext.notifications.addedEvents.length +
-      " modified=" +
-      sessionContext.notifications.modifiedEvents.length +
-      " removed=" +
-      sessionContext.notifications.removedEvents.length,
-  );
+  logStructuredInfo("email", "Sending execution summary email", {
+    added: sessionContext.notifications.addedEvents.length,
+    modified: sessionContext.notifications.modifiedEvents.length,
+    removed: sessionContext.notifications.removedEvents.length,
+  });
   MailApp.sendEmail(message);
 }
 
@@ -1161,6 +1256,8 @@ function sendExecutionSummary(sessionContext) {
  *
  * @param {function} func - The function that should be executed
  * @param {Number} maxRetries - How many times the function should try if it fails
+ * @param {?string} operation - Human-readable operation label for logging
+ * @param {?Object} metadata - Additional metadata to include in logs
  * @return {*} The wrapped function result, or null if retries are exhausted
  */
 var backoffRecoverableErrors = [
@@ -1168,7 +1265,7 @@ var backoffRecoverableErrors = [
   "rate limit exceeded",
   "internal error",
 ];
-function runWithBackoff(func, maxRetries) {
+function runWithBackoff(func, maxRetries, operation, metadata) {
   var tries = 0;
   var result;
   while (tries <= maxRetries) {
@@ -1179,7 +1276,14 @@ function runWithBackoff(func, maxRetries) {
     } catch (err) {
       err = err.message || err;
       if (err.includes("HTTP error")) {
-        Logger.log("[ERROR] HTTP request failed: " + err);
+        logError(
+          "retry",
+          "HTTP request failed",
+          mergeLogMetadata(metadata, {
+            operation: operation,
+            error: err,
+          }),
+        );
         return null;
       } else if (
         err.includes("is not a function") ||
@@ -1189,18 +1293,27 @@ function runWithBackoff(func, maxRetries) {
       ) {
         throw err;
       } else if (tries > maxRetries) {
-        Logger.log(
-          "[ERROR] Exhausted retries after " + maxRetries + " attempts: " + err,
+        logError(
+          "retry",
+          "Exhausted retries after recoverable error",
+          mergeLogMetadata(metadata, {
+            operation: operation,
+            maxRetries: maxRetries,
+            attempts: tries,
+            error: err,
+          }),
         );
         return null;
       } else {
-        Logger.log(
-          "[WARN] Retrying after recoverable error: attempt=" +
-            tries +
-            " maxRetries=" +
-            maxRetries +
-            " error=" +
-            err,
+        logWarn(
+          "retry",
+          "Retrying after recoverable error",
+          mergeLogMetadata(metadata, {
+            operation: operation,
+            attempt: tries,
+            maxRetries: maxRetries,
+            error: err,
+          }),
         );
         Utilities.sleep(
           Math.pow(2, tries) * 100 + Math.round(Math.random() * 100),
@@ -1221,4 +1334,23 @@ function getEventStartForLog(event) {
   }
 
   return event.start.date || event.start.dateTime || "(no start)";
+}
+
+function mergeLogMetadata(baseMetadata, extraMetadata) {
+  var mergedMetadata = {};
+  var sourceMetadata = [baseMetadata, extraMetadata];
+
+  sourceMetadata.forEach(function (metadata) {
+    if (metadata == null) {
+      return;
+    }
+
+    Object.keys(metadata).forEach(function (key) {
+      if (metadata[key] != null) {
+        mergedMetadata[key] = metadata[key];
+      }
+    });
+  });
+
+  return mergedMetadata;
 }

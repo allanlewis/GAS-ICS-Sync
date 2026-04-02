@@ -44,17 +44,29 @@ test("runWithBackoff retries recoverable failures and returns the eventual resul
   const context = loadProject();
   let attempts = 0;
 
-  const result = context.runWithBackoff(() => {
-    attempts += 1;
-    if (attempts < 3) {
-      throw new Error("Rate limit exceeded");
-    }
+  const result = context.runWithBackoff(
+    () => {
+      attempts += 1;
+      if (attempts < 3) {
+        throw new Error("Rate limit exceeded");
+      }
 
-    return "ok";
-  }, 5);
+      return "ok";
+    },
+    5,
+    "Calendar.Events.insert",
+  );
 
   assert.equal(result, "ok");
   assert.equal(attempts, 3);
+  assert.deepEqual(context.__logEntries.console.warn, [
+    [
+      "[retry] Retrying after recoverable error attempt=1 error=Rate limit exceeded maxRetries=5 operation=Calendar.Events.insert",
+    ],
+    [
+      "[retry] Retrying after recoverable error attempt=2 error=Rate limit exceeded maxRetries=5 operation=Calendar.Events.insert",
+    ],
+  ]);
 });
 
 test("runWithBackoff applies retry jitter to the sleep duration", () => {
@@ -67,26 +79,40 @@ test("runWithBackoff applies retry jitter to the sleep duration", () => {
   context.Math.random = () => 0.5;
 
   let attempts = 0;
-  const result = context.runWithBackoff(() => {
-    attempts += 1;
-    if (attempts === 1) {
-      throw new Error("Internal error");
-    }
+  const result = context.runWithBackoff(
+    () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("Internal error");
+      }
 
-    return "ok";
-  }, 1);
+      return "ok";
+    },
+    1,
+    "Calendar.Events.update",
+  );
 
   assert.equal(result, "ok");
   assert.equal(sleptFor, 250);
+  assert.deepEqual(context.__logEntries.console.warn, [
+    [
+      "[retry] Retrying after recoverable error attempt=1 error=Internal error maxRetries=1 operation=Calendar.Events.update",
+    ],
+  ]);
 });
 
 test("runWithBackoff returns null for HTTP failures and rethrows non-recoverable errors", () => {
   const context = loadProject();
 
   assert.equal(
-    context.runWithBackoff(() => {
-      throw new Error("HTTP error 500 when accessing feed");
-    }, 2),
+    context.runWithBackoff(
+      () => {
+        throw new Error("HTTP error 500 when accessing feed");
+      },
+      2,
+      "UrlFetchApp.fetch",
+      { url: "https://example.com/feed.ics" },
+    ),
     null,
   );
 
@@ -97,6 +123,11 @@ test("runWithBackoff returns null for HTTP failures and rethrows non-recoverable
       }, 2),
     /Permission denied/,
   );
+  assert.deepEqual(context.__logEntries.console.error, [
+    [
+      "[retry] HTTP request failed error=HTTP error 500 when accessing feed operation=UrlFetchApp.fetch url=https://example.com/feed.ics",
+    ],
+  ]);
 });
 
 test("sendExecutionSummary renders and sends a condensed execution email", () => {
@@ -127,8 +158,19 @@ test("sendExecutionSummary renders and sends a condensed execution email", () =>
   assert.match(sentMessage.subject, /2 new, 1 modified, 0 deleted/);
   assert.match(sentMessage.htmlBody, /Work: 2 added events/);
   assert.match(sentMessage.htmlBody, /Town Hall at 2026-04-04/);
-  assert.deepEqual(context.__logEntries.logger, [
-    ["Sending execution summary email: added=2 modified=1 removed=0"],
+  assert.deepEqual(context.__logEntries.console.info, [
+    ["[email] Sending execution summary email added=2 modified=1 removed=0"],
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.__logEntries.logger)), [
+    [
+      {
+        message: "Sending execution summary email",
+        component: "email",
+        added: 2,
+        modified: 1,
+        removed: 0,
+      },
+    ],
   ]);
 });
 
@@ -205,9 +247,9 @@ test("removeMissingEvents deletes only missing non-recurring managed events", ()
     JSON.parse(JSON.stringify(sessionContext.notifications.removedEvents)),
     [[["Remove", "2026-04-03T09:00:00Z"], "Work"]],
   );
-  assert.deepEqual(context.__logEntries.logger, [
+  assert.deepEqual(context.__logEntries.console.info, [
     [
-      "Deleting managed event: calendar=Work eventId=remove-1 summary=Remove start=2026-04-03T09:00:00Z",
+      "[cleanup] Deleting managed event calendar=Work calendarId=calendar-1 eventId=remove-1 start=2026-04-03T09:00:00Z summary=Remove",
     ],
   ]);
 });
@@ -304,12 +346,49 @@ test("upsertRecurringEventInstance updates the matching managed recurring event"
   assert.equal(updates.length, 1);
   assert.equal(updates[0][1], "calendar-1");
   assert.equal(updates[0][2], "managed-instance");
-  assert.deepEqual(context.__logEntries.logger, [
+  assert.deepEqual(context.__logEntries.console.info, [
     [
-      "Processing recurring instance: eventId=series-1 recurrenceId=20260405T090000Z summary=(no summary) start=(no start)",
+      "[recurrence] Processing recurring instance eventId=series-1 recurrenceId=20260405T090000Z start=(no start) summary=(no summary)",
     ],
     [
-      "Updating recurring instance: eventId=series-1 recurrenceId=20260405T090000Z matchedEventId=managed-instance",
+      "[recurrence] Updating recurring instance calendarId=calendar-1 eventId=series-1 matchedEventId=managed-instance recurrenceId=20260405T090000Z",
+    ],
+  ]);
+});
+
+test("upsertRecurringEventInstance warns and inserts when no managed match exists", () => {
+  const inserts = [];
+  const context = loadProject();
+
+  context.findRecurringEventInstance = () => [];
+  context.Calendar.Events.insert = (event, calendarId) => {
+    inserts.push([event, calendarId]);
+  };
+
+  const recEvent = {
+    recurringEventId: "20260405T090000",
+    extendedProperties: {
+      private: {
+        id: "series-1",
+      },
+    },
+  };
+
+  context.upsertRecurringEventInstance(recEvent, {
+    targetCalendarId: "calendar-1",
+  });
+
+  assert.equal(inserts.length, 1);
+  assert.equal(inserts[0][1], "calendar-1");
+  assert.equal(recEvent.recurringEventId, "20260405T090000Z");
+  assert.deepEqual(context.__logEntries.console.info, [
+    [
+      "[recurrence] Processing recurring instance eventId=series-1 recurrenceId=20260405T090000 start=(no start) summary=(no summary)",
+    ],
+  ]);
+  assert.deepEqual(context.__logEntries.console.warn, [
+    [
+      "[recurrence] No managed recurring instance matched; inserting new event calendarId=calendar-1 eventId=series-1 recurrenceId=20260405T090000Z",
     ],
   ]);
 });
