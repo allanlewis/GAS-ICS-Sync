@@ -5,14 +5,14 @@ const vm = require("node:vm");
 const { createAppsScriptRuntime } = require("./apps-script-runtime");
 
 const PROJECT_FILES = [
-  "ical.js.gs",
-  "tzid.gs",
-  "config.gs",
-  "logging.gs",
-  "filters.gs",
-  "sync-context.gs",
-  "sync-helpers.gs",
-  "main.gs",
+  "ical.js.js",
+  "tzid.js",
+  "config.js",
+  "logging.js",
+  "filters.js",
+  "sync-context.js",
+  "sync-helpers.js",
+  "main.js",
 ];
 
 function loadProject(options = {}) {

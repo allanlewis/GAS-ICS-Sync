@@ -14,15 +14,15 @@ The script can:
 ## Setup
 
 1. Create a copy of this Apps Script project in your Google account.
-2. Open `config.gs` and configure the `CONFIG` settings near the top of the file.
-3. Update `filters.gs` if you want to include or exclude events by iCal property.
+2. Open `config.js` and configure the `CONFIG` settings near the top of the file.
+3. Update `filters.js` if you want to include or exclude events by iCal property.
 4. Run `install()` once and authorize the script when prompted.
 5. Optional: run `startSync()` once to force an immediate sync.
 6. Use `uninstall()` to remove the triggers if you want to stop scheduled syncing.
 
 ## Configuration
 
-The main settings live in `config.gs` in the `CONFIG` object:
+The main settings live in `config.js` in the `CONFIG` object:
 
 - `sourceCalendars`: map each ICS URL to a target Google Calendar name
 - `howFrequent`: sync interval in minutes
@@ -50,7 +50,7 @@ Additional notes:
 
 ## Filtering
 
-`filters.gs` contains the `filters` array. Each filter can include or exclude events based on iCal properties using structured rules:
+`filters.js` contains the `filters` array. Each filter can include or exclude events based on iCal properties using structured rules:
 
 - `summary`
 - `categories`
@@ -62,9 +62,9 @@ The code supports simple string matches, regex matches, and date-based cutoffs. 
 ## Notes
 
 - This repository is the source for the Apps Script project; there is no build step.
-- `.claspignore` limits `clasp push` uploads to `appsscript.json` and `*.gs` files, keeping `.git` and `node_modules` out of the Apps Script project.
-- Application logging is centralized in `logging.gs`; prefer the `logInfo`, `logWarn`, `logError`, and `logDebug` helpers for human-readable output, and `logStructuredInfo` when you also want a structured `Logger.log` entry.
-- `ical.js.gs` is a vendored copy of `ical.js`, and `tzid.gs` is vendored/generated timezone data. Refresh those files from their upstream sources instead of editing application logic into them.
+- `.claspignore` limits `clasp push` uploads to `appsscript.json` and `*.js` files, keeping `.git` and `node_modules` out of the Apps Script project.
+- Application logging is centralized in `logging.js`; prefer the `logInfo`, `logWarn`, `logError`, and `logDebug` helpers for human-readable output, and `logStructuredInfo` when you also want a structured `Logger.log` entry.
+- `ical.js.js` is a vendored copy of `ical.js`, and `tzid.js` is vendored/generated timezone data. Refresh those files from their upstream sources instead of editing application logic into them.
 - Google can still rate-limit access to the source feed if many users request the same URL at once.
 - Transient errors such as rate limits are retried with exponential backoff and a small random jitter.
 - If you need to stop the sync, remove the triggers with `uninstall()` rather than deleting calendar data manually.
