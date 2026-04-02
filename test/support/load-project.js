@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const { createAppsScriptRuntime } = require("./apps-script-runtime");
 
 const PROJECT_FILES = [
-  "ical.js.js",
+  "ical.js",
   "tzid.js",
   "config.js",
   "logging.js",
