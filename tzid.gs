@@ -1,4 +1,5 @@
-/* Vendored/generated timezone mapping data from IANA tzdata2026a.
+/**
+ * Vendored/generated timezone mapping data from IANA tzdata2026a.
  * Keep application changes out of this file and refresh it from the source dataset when needed.
  */
 var tzids = [
@@ -602,7 +603,10 @@ var tzids = [
   "W-SU",
   "Zulu",
 ];
-//Windows Timezone names to IANA, according https://github.com/unicode-org/cldr/blob/master/common/supplemental/windowsZones.xml
+/**
+ * Windows Timezone names to IANA, according to
+ * https://github.com/unicode-org/cldr/blob/master/common/supplemental/windowsZones.xml
+ */
 tzidreplace = {
   "Dateline Standard Time": "Etc/GMT+12",
   "UTC-11": "Etc/GMT+11",
